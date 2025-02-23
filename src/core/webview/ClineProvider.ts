@@ -20,7 +20,7 @@ import { ApiProvider, ModelInfo } from "../../shared/api"
 import { findLast } from "../../shared/array"
 import { ExtensionMessage, ExtensionState, Platform } from "../../shared/ExtensionMessage"
 import { HistoryItem } from "../../shared/HistoryItem"
-import { ClineCheckpointRestore, WebviewMessage } from "../../shared/WebviewMessage"
+import { ClineAskResponse, ClineCheckpointRestore, WebviewMessage } from "../../shared/WebviewMessage"
 import { fileExistsAtPath } from "../../utils/fs"
 import { Cline } from "../Cline"
 import { openMention } from "../mentions"
@@ -32,7 +32,7 @@ import { ChatSettings, DEFAULT_CHAT_SETTINGS } from "../../shared/ChatSettings"
 import { DIFF_VIEW_URI_SCHEME } from "../../integrations/editor/DiffViewProvider"
 import { searchCommits } from "../../utils/git"
 import { ChatContent } from "../../shared/ChatContent"
-import { getShell } from "../../utils/shell"
+import { ApiConfiguration } from "../../shared/api"
 
 /*
 https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default/weather-webview/src/providers/WeatherViewProvider.ts
@@ -40,7 +40,7 @@ https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default
 https://github.com/KumarVariable/vscode-extension-sidebar-html/blob/master/src/customSidebarViewProvider.ts
 */
 
-type SecretKey =
+export type SecretKey =
 	| "apiKey"
 	| "openRouterApiKey"
 	| "awsAccessKey"
@@ -57,7 +57,7 @@ type SecretKey =
 	| "liteLlmApiKey"
 	| "authToken"
 	| "authNonce"
-type GlobalStateKey =
+export type GlobalStateKey =
 	| "apiProvider"
 	| "apiModelId"
 	| "awsRegion"
@@ -170,6 +170,12 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 
 	async setUserInfo(info?: { displayName: string | null; email: string | null; photoURL: string | null }) {
 		await this.updateGlobalState("userInfo", info)
+	}
+
+	public async handleWebviewAskResponse(response: ClineAskResponse, text?: string, images?: string[]) {
+		if (this.cline) {
+			await this.cline.handleWebviewAskResponse(response, text, images)
+		}
 	}
 
 	public static getVisibleInstance(): ClineProvider | undefined {
@@ -997,6 +1003,17 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
+	async updateApiConfiguration(apiConfiguration: ApiConfiguration) {
+		const { apiProvider, apiModelId } = apiConfiguration
+		await this.updateGlobalState("apiProvider", apiProvider)
+		await this.updateGlobalState("apiModelId", apiModelId)
+
+		if (this.cline) {
+			this.cline.api = buildApiHandler(apiConfiguration)
+		}
+		await this.postStateToWebview()
+	}
+
 	async updateCustomInstructions(instructions?: string) {
 		// User may be clearing the field
 		await this.updateGlobalState("customInstructions", instructions || undefined)
@@ -1204,7 +1221,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
-	private async downloadMcp(mcpId: string) {
+	public async downloadMcp(mcpId: string) {
 		try {
 			// First check if we already have this MCP server installed
 			const servers = this.mcpHub?.getServers() || []
