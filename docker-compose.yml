@@ -4,7 +4,27 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - CLINE_API_KEY=${CLINE_API_KEY}
     ports:
       - "8080:8080"
+      - "3000:3000"
     environment:
       - CLINE_API_KEY=${CLINE_API_KEY}
+    volumes:
+      - ./test-workspace:/home/coder/project
+    command: >
+      bash -c "
+        # Ensure the extension is properly loaded
+        mkdir -p /home/coder/.local/share/code-server/User
+        echo '{\"extensions.autoUpdate\": false, \"extensions.autoCheckUpdates\": false, \"workbench.colorTheme\": \"Default Dark+\", \"cline.apiKey\": \"${CLINE_API_KEY}\"}' > /home/coder/.local/share/code-server/User/settings.json
+        
+        # Start code-server
+        code-server --auth none --bind-addr 0.0.0.0:8080 /home/coder/project
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

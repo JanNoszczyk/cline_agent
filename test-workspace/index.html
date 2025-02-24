@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cline Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9f7fe;
+            border-left: 4px solid #2196F3;
+        }
+        .button {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Cline Extension Test Page</h1>
+        
+        <div class="info">
+            <p>This is a test page for the Cline extension running in a Docker container. If you can see this page, the code-server instance is working correctly.</p>
+            <p>The Cline extension should be installed and ready to use. You can test it by clicking the Cline icon in the sidebar or by using the keyboard shortcut.</p>
+        </div>
+        
+        <button class="button" id="testButton">Test Button</button>
+        
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        document.getElementById('testButton').addEventListener('click', function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Button clicked at: ' + new Date().toLocaleTimeString() + '</p>';
+            console.log('Button clicked!');
+        });
+    </script>
+</body>
+</html>
