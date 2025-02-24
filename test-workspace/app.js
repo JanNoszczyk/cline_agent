@@ -7,7 +7,7 @@
  * @returns {number} The sum of a and b
  */
 function add(a, b) {
-    return a + b;
+	return a + b
 }
 
 /**
@@ -17,7 +17,7 @@ function add(a, b) {
  * @returns {number} The difference between a and b
  */
 function subtract(a, b) {
-    return a - b;
+	return a - b
 }
 
 /**
@@ -27,7 +27,7 @@ function subtract(a, b) {
  * @returns {number} The product of a and b
  */
 function multiply(a, b) {
-    return a * b;
+	return a * b
 }
 
 /**
@@ -38,24 +38,24 @@ function multiply(a, b) {
  * @throws {Error} If b is 0
  */
 function divide(a, b) {
-    if (b === 0) {
-        throw new Error('Cannot divide by zero');
-    }
-    return a / b;
+	if (b === 0) {
+		throw new Error("Cannot divide by zero")
+	}
+	return a / b
 }
 
 // TODO: Implement a function to calculate the average of an array of numbers
 
 // Example usage
-console.log('Addition:', add(5, 3));
-console.log('Subtraction:', subtract(10, 4));
-console.log('Multiplication:', multiply(6, 7));
-console.log('Division:', divide(20, 5));
+console.log("Addition:", add(5, 3))
+console.log("Subtraction:", subtract(10, 4))
+console.log("Multiplication:", multiply(6, 7))
+console.log("Division:", divide(20, 5))
 
 // Export the functions
 module.exports = {
-    add,
-    subtract,
-    multiply,
-    divide
-};
+	add,
+	subtract,
+	multiply,
+	divide,
+}

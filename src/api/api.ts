@@ -51,7 +51,7 @@ export function setupApiServer(context: vscode.ExtensionContext): express.Expres
 		let apiKey = context.globalState.get("apiKey")
 		if (!apiKey) {
 			// Fallback to environment variable if API key is not in global state
-			apiKey = process.env.CLINE_API_KEY;
+			apiKey = process.env.CLINE_API_KEY
 		}
 		const providedApiKey = req.header("X-API-Key")
 
