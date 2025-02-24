@@ -1,0 +1,6 @@
+node_modules
+.git
+.vscode-test
+src/test
+webview-ui/node_modules
+webview-ui/dist

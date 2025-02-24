@@ -9,6 +9,13 @@ import { ClineAskResponse } from "../shared/WebviewMessage"
 import { ApiConfiguration } from "../shared/api"
 import { McpMarketplaceCatalog } from "../shared/mcp"
 
+// API key should be managed via VSCode secrets or global state for VSCode plugin context.
+// Accessing API key from global state for now, consider using SecretStorage for better security.
+// const CLINE_API_KEY = process.env.CLINE_API_KEY; // Environment variable is not suitable for VSCode extension context
+// if (!CLINE_API_KEY) {
+//   console.warn("CLINE_API_KEY environment variable not set.");
+// }
+
 type HandlerFunction = (provider: ClineProvider, req: Request) => Promise<any>
 
 function createHandler(handlerFn: HandlerFunction): RequestHandler {
@@ -41,7 +48,11 @@ export function setupApiServer(context: vscode.ExtensionContext): express.Expres
 	apiServer.use(express.json({ limit: "50mb" }))
 
 	apiServer.use((req: Request, res: Response, next: NextFunction) => {
-		const apiKey = context.globalState.get("apiKey")
+		let apiKey = context.globalState.get("apiKey")
+		if (!apiKey) {
+			// Fallback to environment variable if API key is not in global state
+			apiKey = process.env.CLINE_API_KEY;
+		}
 		const providedApiKey = req.header("X-API-Key")
 
 		if (!providedApiKey || providedApiKey !== apiKey) {
