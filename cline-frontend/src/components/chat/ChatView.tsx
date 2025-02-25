@@ -5,6 +5,7 @@ import styled from "styled-components"
 import { VSCodeButton, VSCodeBadge, VSCodeLink, VSCodeProgressRing } from "@vscode/webview-ui-toolkit/react"
 import debounce from "debounce"
 import { useExtensionState, ClineMessage } from "../../context/ExtensionStateContext"
+import { normalizeApiConfiguration } from "../../utils/apiConfig"
 // Import components from the correct locations
 // If these components are in the same directory, we can use relative imports
 // If they're in different directories, we need to use absolute imports
@@ -23,6 +24,7 @@ interface ChatViewProps {
 
 const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryView }: ChatViewProps) => {
 	const { clineMessages: messages, taskHistory, apiConfiguration } = useExtensionState()
+	const { selectedModelInfo } = useMemo(() => normalizeApiConfiguration(apiConfiguration), [apiConfiguration])
 
 	// Get the first message as the task
 	const task = useMemo(() => messages.at(0), [messages])
@@ -589,7 +591,7 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 					task={task}
 					tokensIn={0}
 					tokensOut={0}
-					doesModelSupportPromptCache={false}
+					doesModelSupportPromptCache={selectedModelInfo?.supportsPromptCache || false}
 					cacheWrites={0}
 					cacheReads={0}
 					totalCost={0}

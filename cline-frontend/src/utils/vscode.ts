@@ -1,4 +1,5 @@
 import { WebviewMessage } from "../types/WebviewMessage"
+import { apiClient } from "./apiClient"
 
 /**
  * A web-compatible version of the VSCode API wrapper.
@@ -7,12 +8,17 @@ import { WebviewMessage } from "../types/WebviewMessage"
 class VSCodeAPIWrapper {
 	/**
 	 * Post a message (i.e. send arbitrary data) to the owner of the webview.
-	 * In a web context, this just logs to the console.
+	 * In a web context, this forwards the message to the API server.
 	 *
 	 * @param message Arbitrary data to send
 	 */
 	public postMessage(message: WebviewMessage) {
 		console.log("VSCode message (web mock):", message)
+
+		// Forward the message to the API server
+		apiClient.postMessage(message).catch(error => {
+			console.error("Failed to post message to API server:", error)
+		})
 
 		// Handle specific message types that would normally be handled by VSCode
 		if (message.type === "openMention" && typeof message.text === "string") {
@@ -20,7 +26,16 @@ class VSCodeAPIWrapper {
 		} else if (message.type === "openImage" && typeof message.text === "string") {
 			window.open(message.text, "_blank")
 		} else if (message.type === "deleteTaskWithId" && typeof message.text === "string") {
-			console.log(`Would delete task with ID: ${message.text}`)
+			apiClient.deleteTask(message.text).catch(error => {
+				console.error("Failed to delete task:", error)
+			})
+		} else if (message.type === "clearTask") {
+			// Clear the task in the UI
+			console.log("Clearing task")
+		} else if (message.type === "cancelTask" && typeof message.text === "string") {
+			apiClient.cancelTask(message.text).catch(error => {
+				console.error("Failed to cancel task:", error)
+			})
 		}
 	}
 

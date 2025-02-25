@@ -22,9 +22,65 @@ export interface HistoryItem {
 }
 
 export interface ApiConfiguration {
-	provider?: string
+	apiProvider?: string
+	apiModelId?: string
 	apiKey?: string
-	modelId?: string
+	liteLlmBaseUrl?: string
+	liteLlmModelId?: string
+	liteLlmApiKey?: string
+	anthropicBaseUrl?: string
+	openRouterApiKey?: string
+	openRouterModelId?: string
+	openRouterModelInfo?: {
+		maxTokens?: number
+		contextWindow?: number
+		supportsImages?: boolean
+		supportsComputerUse?: boolean
+		supportsPromptCache: boolean
+		inputPrice?: number
+		outputPrice?: number
+		cacheWritesPrice?: number
+		cacheReadsPrice?: number
+		description?: string
+	}
+	awsAccessKey?: string
+	awsSecretKey?: string
+	awsSessionToken?: string
+	awsRegion?: string
+	awsUseCrossRegionInference?: boolean
+	awsUseProfile?: boolean
+	awsProfile?: string
+	vertexProjectId?: string
+	vertexRegion?: string
+	openAiBaseUrl?: string
+	openAiApiKey?: string
+	openAiModelId?: string
+	openAiModelInfo?: {
+		maxTokens?: number
+		contextWindow?: number
+		supportsImages?: boolean
+		supportsComputerUse?: boolean
+		supportsPromptCache: boolean
+		inputPrice?: number
+		outputPrice?: number
+	}
+	ollamaModelId?: string
+	ollamaBaseUrl?: string
+	lmStudioModelId?: string
+	lmStudioBaseUrl?: string
+	geminiApiKey?: string
+	openAiNativeApiKey?: string
+	deepSeekApiKey?: string
+	requestyApiKey?: string
+	requestyModelId?: string
+	togetherApiKey?: string
+	togetherModelId?: string
+	qwenApiKey?: string
+	mistralApiKey?: string
+	azureApiVersion?: string
+	vsCodeLmModelSelector?: any
+	o3MiniReasoningEffort?: string
+	qwenApiLine?: string
 }
 
 export interface AutoApprovalSettings {

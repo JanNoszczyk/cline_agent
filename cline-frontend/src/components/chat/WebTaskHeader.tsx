@@ -1,12 +1,13 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react"
 import { useWindowSize } from "react-use"
 import { VSCodeButton } from "@vscode/webview-ui-toolkit/react"
-import { ClineMessage } from "../../context/ExtensionStateContext"
+import { ClineMessage, useExtensionState } from "../../context/ExtensionStateContext"
 import { formatLargeNumber } from "../../utils/format"
 import { formatSize } from "../../utils/size"
 import { vscode } from "../../utils/vscode"
 import Thumbnails from "../common/Thumbnails"
 import { mentionRegexGlobal } from "../../utils/context-mentions"
+import { normalizeApiConfiguration } from "../../utils/apiConfig"
 
 interface TaskHeaderProps {
 	task: ClineMessage
@@ -42,7 +43,9 @@ const WebTaskHeader: React.FC<TaskHeaderProps> = ({
 	const textRef = useRef<HTMLDivElement>(null)
 
 	const { height: windowHeight, width: windowWidth } = useWindowSize()
-	const contextWindow = 100000 // Default context window size
+	const { apiConfiguration } = useExtensionState()
+	const { selectedModelInfo } = useMemo(() => normalizeApiConfiguration(apiConfiguration), [apiConfiguration])
+	const contextWindow = selectedModelInfo?.contextWindow || 100000 // Use model's context window or default
 
 	// Adjust text container height when expanded
 	useEffect(() => {

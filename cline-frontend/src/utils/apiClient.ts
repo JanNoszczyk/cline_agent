@@ -1,5 +1,5 @@
 import { ApiConfiguration } from "../context/ExtensionStateContext"
-import { ClineAskResponse } from "../../../src/shared/WebviewMessage"
+import { ClineAskResponse } from "../types/WebviewMessage"
 
 // Base URL for the API server
 const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:3001"
