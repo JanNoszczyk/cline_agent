@@ -16,7 +16,7 @@ class VSCodeAPIWrapper {
 		console.log("VSCode message (web mock):", message)
 
 		// Forward the message to the API server
-		apiClient.postMessage(message).catch(error => {
+		apiClient.postMessage(message).catch((error) => {
 			console.error("Failed to post message to API server:", error)
 		})
 
@@ -26,14 +26,14 @@ class VSCodeAPIWrapper {
 		} else if (message.type === "openImage" && typeof message.text === "string") {
 			window.open(message.text, "_blank")
 		} else if (message.type === "deleteTaskWithId" && typeof message.text === "string") {
-			apiClient.deleteTask(message.text).catch(error => {
+			apiClient.deleteTask(message.text).catch((error) => {
 				console.error("Failed to delete task:", error)
 			})
 		} else if (message.type === "clearTask") {
 			// Clear the task in the UI
 			console.log("Clearing task")
 		} else if (message.type === "cancelTask" && typeof message.text === "string") {
-			apiClient.cancelTask(message.text).catch(error => {
+			apiClient.cancelTask(message.text).catch((error) => {
 				console.error("Failed to cancel task:", error)
 			})
 		}
