@@ -33,6 +33,7 @@ show_help() {
     echo -e "${BLUE}Usage: $0 [OPTIONS]${NC}"
     echo -e "${BLUE}Options:${NC}"
     echo -e "  ${GREEN}--build${NC}          Build the Docker container"
+    echo -e "  ${GREEN}--force-build${NC}    Force build the Docker container even if image exists"
     echo -e "  ${GREEN}--run${NC}            Run the Docker container"
     echo -e "  ${GREEN}--stop${NC}           Stop the Docker container"
     echo -e "  ${GREEN}--restart${NC}        Restart the Docker container"
@@ -42,6 +43,7 @@ show_help() {
     echo -e "  ${GREEN}--help${NC}           Show this help message"
     echo -e "${BLUE}Examples:${NC}"
     echo -e "  ${GREEN}$0 --build --run${NC}                Build and run the Docker container"
+    echo -e "  ${GREEN}$0 --force-build --run${NC}          Force build and run the Docker container"
     echo -e "  ${GREEN}$0 --disable-husky --build --run${NC}  Build and run with Husky hooks disabled"
     echo -e "  ${GREEN}$0 --test${NC}                       Test the API server"
 }
@@ -53,6 +55,7 @@ if [ $# -eq 0 ]; then
 fi
 
 BUILD=false
+FORCE_BUILD=false
 RUN=false
 STOP=false
 RESTART=false
@@ -64,6 +67,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --build)
             BUILD=true
+            shift
+            ;;
+        --force-build)
+            FORCE_BUILD=true
             shift
             ;;
         --run)
@@ -118,7 +125,24 @@ fi
 
 # Build the Docker container
 if [ "$BUILD" = true ]; then
-    echo -e "${YELLOW}Building the Docker container...${NC}"
+    # Check if image already exists
+    if docker images -q cline_agent-cline-server > /dev/null 2>&1; then
+        echo -e "${GREEN}Existing Docker image found. Using it instead of building a new one.${NC}"
+        echo -e "${YELLOW}If you want to force a rebuild, use the --force-build flag instead of --build.${NC}"
+    else
+        echo -e "${YELLOW}No existing Docker image found. Building the Docker container...${NC}"
+        docker-compose build
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}Failed to build the Docker container.${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}Docker container built successfully.${NC}"
+    fi
+fi
+
+# Force build the Docker container
+if [ "$FORCE_BUILD" = true ]; then
+    echo -e "${YELLOW}Force building the Docker container...${NC}"
     docker-compose build
     if [ $? -ne 0 ]; then
         echo -e "${RED}Failed to build the Docker container.${NC}"
@@ -140,13 +164,33 @@ fi
 
 # Restart the Docker container
 if [ "$RESTART" = true ]; then
-    echo -e "${YELLOW}Restarting the Docker container...${NC}"
-    docker-compose restart
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Failed to restart the Docker container.${NC}"
-        exit 1
+    echo -e "${YELLOW}Checking for running containers...${NC}"
+    
+    # Check if the container is already running
+    if docker ps --format '{{.Names}}' | grep -q "cline_agent-cline-server"; then
+        echo -e "${GREEN}Container is already running. Attempting to connect...${NC}"
+        
+        # Test the API connection
+        if curl -s -o /dev/null -w "%{http_code}" -X GET -H "X-API-Key: test-api-key" http://localhost:3000/api/state | grep -q "200"; then
+            echo -e "${GREEN}Successfully connected to the API server.${NC}"
+        else
+            echo -e "${YELLOW}Could not connect to the API server. Restarting container...${NC}"
+            docker-compose restart
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}Failed to restart the Docker container.${NC}"
+                exit 1
+            fi
+            echo -e "${GREEN}Docker container restarted successfully.${NC}"
+        fi
+    else
+        echo -e "${YELLOW}No running container found. Starting container...${NC}"
+        docker-compose up -d
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}Failed to start the Docker container.${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}Docker container started successfully.${NC}"
     fi
-    echo -e "${GREEN}Docker container restarted successfully.${NC}"
 fi
 
 # Run the Docker container

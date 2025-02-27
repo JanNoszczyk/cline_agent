@@ -5,20 +5,16 @@ services:
             context: .
             dockerfile: Dockerfile
             args:
-                - CLINE_API_KEY=${CLINE_API_KEY}
+                - CLINE_API_KEY=test-api-key
         ports:
             - "8080:8080"
             - "3000:3000"
         environment:
-            - CLINE_API_KEY=${CLINE_API_KEY}
+            - CLINE_API_KEY=test-api-key
         volumes:
             - ./test-workspace:/home/coder/project
-        entrypoint: ["/bin/sh", "-c"]
-        command: >
-            "mkdir -p /home/coder/.local/share/code-server/User &&
-            echo '{\"extensions.autoUpdate\": false, \"extensions.autoCheckUpdates\": false, \"workbench.colorTheme\": \"Default Dark+\", \"cline.apiKey\": \"${CLINE_API_KEY}\"}' > /home/coder/.local/share/code-server/User/settings.json &&
-            (python3 -c \"import http.server, socketserver, json, os; class Handler(http.server.BaseHTTPRequestHandler): def do_GET(self): if self.path == '/api/state': api_key = self.headers.get('X-API-Key'); if api_key != os.environ.get('CLINE_API_KEY'): self.send_response(401); self.send_header('Content-type', 'application/json'); self.end_headers(); self.wfile.write(json.dumps({'message': 'Unauthorized: Invalid or missing API key.'}).encode()); return; self.send_response(200); self.send_header('Content-type', 'application/json'); self.end_headers(); self.wfile.write(json.dumps({'status': 'ok'}).encode()); else: self.send_response(404); self.send_header('Content-type', 'application/json'); self.end_headers(); self.wfile.write(json.dumps({'message': 'Not found'}).encode()); httpd = socketserver.TCPServer(('0.0.0.0', 3000), Handler); print('Test API server listening on port 3000'); httpd.serve_forever()\" &) &&
-            code-server --auth none --bind-addr 0.0.0.0:8080 /home/coder/project"
+        entrypoint: ["/usr/local/bin/entrypoint.sh"]
+        command: ["code-server", "--auth", "none", "--bind-addr", "0.0.0.0:8080", "/home/coder/project"]
         healthcheck:
             test: ["CMD", "curl", "-f", "http://localhost:8080"]
             interval: 30s
