@@ -1,0 +1,23 @@
+version: "3.8"
+services:
+    cline-server:
+        build:
+            context: .
+            dockerfile: Dockerfile
+            args:
+                - CLINE_API_KEY=test-api-key
+        ports:
+            - "8080:8080"
+            - "3000:3000"
+        environment:
+            - CLINE_API_KEY=test-api-key
+        volumes:
+            - ./test-workspace:/home/coder/project
+        entrypoint: ["/usr/local/bin/entrypoint.sh"]
+        command: ["code-server", "--auth", "none", "--bind-addr", "0.0.0.0:8080", "/home/coder/project"]
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8080"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 10s

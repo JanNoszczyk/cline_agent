@@ -9,6 +9,7 @@ import "./utils/path" // necessary to have access to String.prototype.toPosix
 import { DIFF_VIEW_URI_SCHEME } from "./integrations/editor/DiffViewProvider"
 import assert from "node:assert"
 import { telemetryService } from "./services/telemetry/TelemetryService"
+import { setupApiServer } from "./api/api"
 
 /*
 Built using https://github.com/microsoft/vscode-webview-ui-toolkit
@@ -20,6 +21,8 @@ https://github.com/microsoft/vscode-webview-ui-toolkit-samples/tree/main/framewo
 */
 
 let outputChannel: vscode.OutputChannel
+let serverInstance: any
+
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -31,6 +34,16 @@ export function activate(context: vscode.ExtensionContext) {
 	Logger.log("Cline extension activated")
 
 	const sidebarProvider = new ClineProvider(context, outputChannel)
+
+	// Initialize API server
+	const apiServer = setupApiServer(context)
+
+	// --- Start the API Server ---
+	// The API server is started here and listens on port 3000.
+	// This allows external applications to communicate with the Cline extension.
+	serverInstance = apiServer.listen(3000, () => {
+		console.log("Cline API server listening on port 3000")
+	})
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(ClineProvider.sideBarId, sidebarProvider, {
@@ -185,6 +198,14 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 	context.subscriptions.push(vscode.window.registerUriHandler({ handleUri }))
 
+	context.subscriptions.push({
+		dispose: () => {
+			if (serverInstance) {
+				serverInstance.close()
+			}
+		},
+	})
+
 	return createClineAPI(outputChannel, sidebarProvider)
 }
 
@@ -192,6 +213,14 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
 	telemetryService.shutdown()
 	Logger.log("Cline extension deactivated")
+
+	// Stop the API server
+	// When the extension is deactivated, the API server is stopped to
+	// prevent any further external communication.
+	if (serverInstance) {
+		serverInstance.close()
+	}
+
 }
 
 // TODO: Find a solution for automatically removing DEV related content from production builds.
