@@ -58,12 +58,21 @@ RUN --mount=type=cache,target=/var/cache/apt \
         echo "Retry attempt $i for nodejs install..." && sleep 15; \
     done
 
-# Create API server script
+# Create API server script and install dependencies
 COPY api_server.js /home/coder/api_server.js
+RUN cd /home/coder && npm install express
 
-# Create startup script
+# Create startup script that handles the API key at runtime
 RUN echo '#!/bin/bash\n\
+# Replace API key placeholder with runtime environment variable\n\
+if [ -n "$CLINE_API_KEY" ]; then\n\
+  sed -i "s/PLACEHOLDER_API_KEY/$CLINE_API_KEY/g" /home/coder/.local/share/code-server/User/settings.json\n\
+fi\n\
+\n\
+# Start API server in background\n\
 node /home/coder/api_server.js &\n\
+\n\
+# Execute the main command\n\
 exec "$@"' > /usr/local/bin/entrypoint.sh && \
     chmod +x /usr/local/bin/entrypoint.sh
 
@@ -83,15 +92,14 @@ RUN code-server --install-extension /app/*.vsix
 # Create a settings directory to ensure extension is properly loaded
 RUN mkdir -p /home/coder/.local/share/code-server/User
 
-# Create settings.json to ensure the extension is enabled
-RUN echo '{"extensions.autoUpdate": false, "extensions.autoCheckUpdates": false, "workbench.colorTheme": "Default Dark+", "cline.apiKey": "${CLINE_API_KEY}"}' > /home/coder/.local/share/code-server/User/settings.json
-
-# Environment variables
-ARG CLINE_API_KEY
-ENV CLINE_API_KEY=${CLINE_API_KEY}
+# Create settings.json with placeholder for API key
+RUN echo '{"extensions.autoUpdate": false, "extensions.autoCheckUpdates": false, "workbench.colorTheme": "Default Dark+", "cline.apiKey": "PLACEHOLDER_API_KEY"}' > /home/coder/.local/share/code-server/User/settings.json
 
 # Expose the ports for code-server and the API server
 EXPOSE 8080 3000
+
+# Set entrypoint to our script
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Run code-server
 CMD ["code-server", "--auth", "none", "--bind-addr", "0.0.0.0:8080"]

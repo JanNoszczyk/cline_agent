@@ -1,23 +1,27 @@
 # API Keys
 
-This file contains API keys used in the project. This file should not be committed to the repository.
+This file contains information about API keys used in the project. This file should not be committed to the repository.
 
-## Anthropic API Key
+## API Keys for Testing
 
-```
-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
-```
-
-This API key is used for the Claude 3.7 model in the chess game tests. It's used as a fallback when the Cline agent API is not available.
+For testing purposes, you can use placeholder API keys. In production, replace these with actual API keys.
 
 ## Usage
 
-The API key is used in the following files:
-- `chess_game.sh`
-- `test-chess-api.sh`
-- `test-cline-chess.sh`
+API keys are used in the following files:
+- Docker configuration files
+- API server scripts
+- Testing scripts
 
-To use the API key in a script, read it from this file or set it as an environment variable:
+To use an API key in a script, read it from this file or set it as an environment variable:
 
 ```bash
-CLAUDE_API_KEY="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"
+CLINE_API_KEY="your-api-key-here"
+```
+
+## Security Considerations
+
+- Never commit actual API keys to the repository
+- Use environment variables or secure storage for API keys
+- Rotate API keys regularly
+- Use different API keys for development and production

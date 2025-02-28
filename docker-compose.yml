@@ -4,13 +4,11 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
-            args:
-                - CLINE_API_KEY=test-api-key
         ports:
             - "8080:8080"
             - "3000:3000"
         environment:
-            - CLINE_API_KEY=test-api-key
+            - CLINE_API_KEY=${CLINE_API_KEY}
         volumes:
             - ./test-workspace:/home/coder/project
         entrypoint: ["/usr/local/bin/entrypoint.sh"]

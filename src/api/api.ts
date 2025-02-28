@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction, RequestHandler } from "express"
 import * as vscode from "vscode"
-import { ClineProvider, GlobalStateKey } from "../core/webview/ClineProvider"
+import { ClineProvider } from "../core/webview/ClineProvider"
+import type { GlobalStateKey } from "../core/webview/ClineProvider"
 import { HistoryItem } from "../shared/HistoryItem"
 import { AutoApprovalSettings } from "../shared/AutoApprovalSettings"
 import { BrowserSettings } from "../shared/BrowserSettings"

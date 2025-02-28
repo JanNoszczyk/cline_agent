@@ -5,24 +5,18 @@
 - **API Server Files**: JavaScript/TypeScript implementations in the root directory
   - `api_server.js`: Main JavaScript implementation
   - `api_server.ts`: TypeScript implementation (reference)
-  - `test_api_server.js`: Test version with hardcoded API key
+  - `api_server_standalone.js`: Standalone version of the API server
 
 - **Docker Files**: Configuration for containerization in the root directory
   - `Dockerfile`: Multi-stage build for the container
   - `docker-compose.yml`: Service definition
-  - `rebuild-docker.sh`: Helper script for rebuilding containers
-  - `DOCKER_NETWORK_TROUBLESHOOTING.md`: Documentation for network issues
+  - `run-docker.sh`: Helper script for running Docker containers
 
-- **Frontend Files**: React application moved to cline-frontend-private repository
-  - Standard Vite React TypeScript project structure
-  - Mock API server in the frontend repository
-
-- **Chess Game Test Files**: Test scripts for the Cline agent API
-  - `chess_game.sh`: Simple bash chess game that uses the Cline agent
-  - `test-chess-api.sh`: Tests API interaction with the Docker Cline agent
-  - `test-cline-chess.sh`: Tests using the Cline agent to create a chess game
-  - `run-chess-tests.sh`: Script to run all chess-related tests
-  - `README-chess-tests.md`: Documentation for the chess game tests
+- **Testing Files**: Test scripts for the API server
+  - `test-docker-api.js`: Tests for the Docker API server
+  - `run-docker-api-tests.sh`: Script to run Docker API tests
+  - `test-e2e-chess.js`: End-to-end tests using chess game creation
+  - `run-e2e-chess-tests.sh`: Script to run chess game tests
 
 ## Coding Patterns
 
@@ -31,8 +25,6 @@
 - **Error Handling**: Consistent error response format with status codes and messages
 - **Environment Variables**: Configuration through environment variables
   - `CLINE_API_KEY`: API key for authentication
-  - `VITE_API_URL`: API server URL for frontend
-  - `VITE_API_KEY`: API key for frontend to use
 
 ## Development Workflow
 
@@ -40,47 +32,20 @@
   - Test API endpoints with curl or Postman
   - Verify authentication is working correctly
   - Ensure CORS headers are set properly
-  - Use test-api.sh script for comprehensive testing
+  - Use test scripts for comprehensive testing
   - Remember that the API server runs as part of the VSCode server in the Docker container
-  - Use run-api-tests.sh to test both API server and frontend integration
-
-- **API Testing**:
-  - Use test-docker-api.js to verify Docker API server functionality
-  - Use test-frontend-api.js to validate frontend integration
-  - Use test-api-endpoints.js to test each endpoint in apiClient.ts
-  - Run all tests with run-api-tests.sh
-  - Tests use Puppeteer for browser automation
-  - Tests verify both success paths and error handling
-  - Use testHelpers.ts to expose internal functions for testing
-  - Track mock response usage to verify fallback behavior
-  - Initialize test environment in development mode
-  - Test each API endpoint with both success and error scenarios
-  - Use mock data for comprehensive testing
 
 - **Docker Development**:
-  - Use `run-docker.sh --build --run` to build and run the container (will use existing image if available)
-  - Use `run-docker.sh --force-build --run` to force a new build and run the container
-  - Use `rebuild-docker-improved.sh` for an optimized rebuild that preserves existing resources:
-    - Intelligently reuses Docker layers and existing images
-    - Significantly speeds up rebuilds by avoiding unnecessary downloads
-    - Gracefully stops running containers before rebuilding
-    - Preserves cached dependencies and build artifacts
-  - Use `rebuild-docker.sh` only if encountering persistent issues that require a complete rebuild
+  - Use `run-docker.sh --build --run` to build and run the container
   - Check logs with `docker-compose logs` or `run-docker.sh --logs`
   - Use `docker-compose up -d` to start the container in the background
   - Access code-server at http://localhost:8080
   - Access API server at http://localhost:3000
   - Stop the container with `docker-compose down` or `run-docker.sh --stop`
 
-- **Frontend Development**:
-  - Run the mock API server for development
-  - Use `npm run dev` in the cline-frontend-private directory
-  - Access the frontend at http://localhost:3002
-
 - **Deployment Testing**:
   - Build and run the container with `./run-docker.sh --build --run`
-  - Test the API server with `./test-api.sh`
-  - Manually test endpoints with curl:
+  - Test the API server with curl:
     ```bash
     curl -X GET -H "X-API-Key: test-api-key" http://localhost:3000/api/state
     ```
@@ -94,139 +59,20 @@
   - Consider using a VPN if network blocks connections
 
 - **API Server Limitations**:
-  - Currently only supports basic health check endpoint
-  - No support for task management or file operations
-  - Plan to expand functionality in future iterations
-
-- **Frontend-API Integration**:
-  - Docker API server has limited functionality (only /api/state endpoint)
-  - Frontend needs fallback behavior for unsupported endpoints
-  - Use mock responses for endpoints not supported by the Docker API server
-  - Update ExtensionStateContext to handle simplified API responses
-  - Implement robust error handling in apiClient.ts
-  - Add welcome message to ensure consistent UI state
-  - Return mock responses instead of throwing errors for better resilience
+  - Currently only supports basic endpoints
+  - No support for WebSockets or real-time updates
+  - Limited error handling and logging
 
 ## System Management
 
 - **Starting the System**:
   - Start Docker container with API server: `./run-docker.sh --build --run`
-    - This is the PREFERRED method for running the API server
-    - It will use existing images if available
-    - The API server runs automatically inside the Docker container
-  - Alternative method (not recommended for normal use): `docker-compose up -d`
-  - Start frontend: `cd ../cline-frontend-private && npm run dev`
   - Verify API server: `curl -X GET -H "X-API-Key: test-api-key" http://localhost:3000/api/state`
 
 - **Stopping the System**:
-  - Stop frontend: `Ctrl+C` in terminal or `pkill -f "npm run dev"`
   - Stop Docker container and API server: `./run-docker.sh --stop`
   - Alternative method: `docker-compose down`
 
-- **Restarting the System**:
-  - Restart Docker container and API server: `./run-docker.sh --restart`
-  - Restart frontend: `cd ../cline-frontend-private && npm run dev`
-
-- **Rebuilding the Docker Container**:
-  - Optimized rebuild (preserves resources): `./rebuild-docker-improved.sh` (PREFERRED)
-  - Complete rebuild (removes everything): `./rebuild-docker.sh` (only when necessary)
-
-- **IMPORTANT: Always use the shell scripts**
-  - Always use `./run-docker.sh` to run the API server
-  - Never run the API server directly with node
-  - The shell script ensures proper configuration and environment setup
-  - The shell script handles image reuse and caching automatically
-
-## Frontend-Docker API Integration
-
-- **Connecting to Docker API Server**:
-  - Update the frontend .env file to point to http://localhost:3000
-  - Ensure API key matches the one expected by the Docker API server (test-api-key)
-  - Modify ExtensionStateContext to handle the limited API response
-  - Implement mock responses for endpoints not supported by the Docker API server
-  - Add welcome message to ensure UI displays properly
-  - Implement graceful error handling for API failures
-
-- **Testing the Connection**:
-  - Verify Docker container is running with `docker-compose ps`
-  - Test API server with `curl -X GET -H "X-API-Key: test-api-key" http://localhost:3000/api/state`
-  - Start the frontend with `cd ../cline-frontend-private && npm run dev`
-  - Access the frontend at http://localhost:3002 to verify connection
-  - Run automated tests with `./run-api-tests.sh`
-  - Verify all API endpoints with `node test-api-endpoints.js`
-
-- **API Testing Framework**:
-  - Docker API server tests verify:
-    - API server is running
-    - CORS is properly configured
-    - Authentication with valid/invalid API keys
-    - Missing API key handling
-    - Unsupported HTTP methods
-    - Unsupported endpoints
-  - Frontend integration tests verify:
-    - Frontend loads successfully
-    - Frontend connects to API server
-    - Frontend handles API responses correctly
-    - Frontend handles mock responses for unsupported endpoints
-    - API error handling
-    - Mock data consistency
-  - API endpoint tests verify:
-    - Each endpoint in apiClient.ts is tested
-    - Success scenarios for supported endpoints
-    - Error handling for unsupported endpoints
-    - Mock response usage for unsupported endpoints
-    - All HTTP methods (GET, POST, PUT, DELETE)
-    - All API paths and parameters
-  - Chess game tests verify:
-    - API server availability and authentication
-    - Hypothetical chess game creation endpoint
-    - Direct Anthropic API fallback functionality
-    - Chess game script generation and validation
-    - End functionality rather than code comparison
-
-## Chess Game Testing
-
-- **Running Chess Tests**:
-  - Use `./run-chess-tests.sh` to run all chess-related tests
-  - Individual tests can be run with:
-    - `./test-chess-api.sh` for API interaction testing
-    - `./test-cline-chess.sh` for Cline agent chess game creation testing
-  - Play the chess game with `./chess_game.sh`
-  - Generated chess games can be run with:
-    - `./anthropic_chess_game.sh` (if generated by test-chess-api.sh)
-    - `./cline_chess_game.sh` (if generated by test-cline-chess.sh)
-
-- **Running End-to-End Chess Tests**:
-  - Use `./run-e2e-chess-tests.sh` to run the end-to-end chess game creation tests
-  - This tests the complete flow from deploying the Docker container to creating a chess game
-  - The test generates a chess game script called `e2e_chess_game.sh`
-  - You can run the generated chess game with `./e2e_chess_game.sh`
-  - The test uses the Anthropic API as a fallback when the Cline agent API doesn't support chess game creation
-
-- **Chess Game API Testing Strategy**:
-  - Test the current API server functionality (limited to /api/state endpoint)
-  - Simulate what would happen with a more complete API
-  - Use direct Anthropic API as a fallback to demonstrate expected functionality
-  - Focus on end functionality rather than code comparison
-  - Generate chess game scripts to demonstrate what would be possible
-
-- **Chess Game Implementation Requirements**:
-  - Extended API server with task submission and retrieval endpoints
-  - Cline agent configuration for chess-specific tasks
-  - Docker container enhancements for script execution
-  - Testing framework for chess game functionality
-
-## Future Considerations
-
-- **Frontend**: ✅ Moved cline-frontend to a separate private project (cline-frontend-private)
-- **API Expansion**: Enhance API with more endpoints and WebSocket support
-- **Container Optimization**: Improve build time and startup performance
-- **Multi-User Support**: Implement container isolation for multiple users
-- **Testing Enhancements**:
-  - Implement end-to-end testing for complete user flows
-  - Add automated CI/CD pipeline for running tests
-  - Create more comprehensive test cases for edge conditions
-  - Implement performance testing for API server under load
-  - Add test coverage reporting
-  - Implement continuous integration for automated testing
-  - Add visual regression testing for frontend components
+- **Testing the System**:
+  - Run Docker API tests: `./run-docker-api-tests.sh`
+  - Run chess game tests: `./run-e2e-chess-tests.sh`

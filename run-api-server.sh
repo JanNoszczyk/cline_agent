@@ -15,8 +15,8 @@ else
 fi
 
 # Make the API server executable
-chmod +x api_server_standalone.js
+chmod +x api_server.js
 
 # Run the API server
 echo "Starting API server on port $PORT..."
-PORT=$PORT node api_server_standalone.js
+PORT=$PORT node api_server.js

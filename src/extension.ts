@@ -23,7 +23,6 @@ https://github.com/microsoft/vscode-webview-ui-toolkit-samples/tree/main/framewo
 let outputChannel: vscode.OutputChannel
 let serverInstance: any
 
-
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -220,7 +219,6 @@ export function deactivate() {
 	if (serverInstance) {
 		serverInstance.close()
 	}
-
 }
 
 // TODO: Find a solution for automatically removing DEV related content from production builds.

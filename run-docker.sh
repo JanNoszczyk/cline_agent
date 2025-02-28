@@ -21,10 +21,17 @@ if ! command -v docker-compose &> /dev/null; then
     exit 1
 fi
 
+# Source .env file if it exists
+if [ -f ".env" ]; then
+    echo -e "${GREEN}Sourcing environment variables from .env file...${NC}"
+    export $(grep -v '^#' .env | xargs)
+fi
+
 # Check if CLINE_API_KEY is set
 if [ -z "$CLINE_API_KEY" ]; then
     echo -e "${YELLOW}Warning: CLINE_API_KEY environment variable is not set.${NC}"
     echo -e "${YELLOW}You can set it with: export CLINE_API_KEY=your-api-key${NC}"
+    echo -e "${YELLOW}Or add it to your .env file.${NC}"
     echo -e "${YELLOW}Continuing without an API key...${NC}"
 fi
 

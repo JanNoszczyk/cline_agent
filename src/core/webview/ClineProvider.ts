@@ -57,7 +57,7 @@ type SecretKey =
 	| "liteLlmApiKey"
 	| "authToken"
 	| "authNonce"
-type GlobalStateKey =
+export type GlobalStateKey =
 	| "apiProvider"
 	| "apiModelId"
 	| "awsRegion"
@@ -1050,6 +1050,104 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		await this.postStateToWebview()
 	}
 
+	async handleWebviewAskResponse(response: any, text?: string, images?: string[]) {
+		if (this.cline) {
+			await this.cline.handleWebviewAskResponse(response, text, images);
+		}
+	}
+
+	async updateApiConfiguration(config: any) {
+		// Update API configuration in global state
+		const {
+			apiProvider,
+			apiModelId,
+			apiKey,
+			openRouterApiKey,
+			awsAccessKey,
+			awsSecretKey,
+			awsSessionToken,
+			awsRegion,
+			awsUseCrossRegionInference,
+			awsProfile,
+			awsUseProfile,
+			vertexProjectId,
+			vertexRegion,
+			openAiBaseUrl,
+			openAiApiKey,
+			openAiModelId,
+			openAiModelInfo,
+			ollamaModelId,
+			ollamaBaseUrl,
+			lmStudioModelId,
+			lmStudioBaseUrl,
+			anthropicBaseUrl,
+			geminiApiKey,
+			openAiNativeApiKey,
+			deepSeekApiKey,
+			requestyApiKey,
+			requestyModelId,
+			togetherApiKey,
+			togetherModelId,
+			qwenApiKey,
+			mistralApiKey,
+			azureApiVersion,
+			openRouterModelId,
+			openRouterModelInfo,
+			vsCodeLmModelSelector,
+			liteLlmBaseUrl,
+			liteLlmModelId,
+			liteLlmApiKey,
+			qwenApiLine,
+		} = config;
+
+		await this.updateGlobalState("apiProvider", apiProvider);
+		await this.updateGlobalState("apiModelId", apiModelId);
+		await this.storeSecret("apiKey", apiKey);
+		await this.storeSecret("openRouterApiKey", openRouterApiKey);
+		await this.storeSecret("awsAccessKey", awsAccessKey);
+		await this.storeSecret("awsSecretKey", awsSecretKey);
+		await this.storeSecret("awsSessionToken", awsSessionToken);
+		await this.updateGlobalState("awsRegion", awsRegion);
+		await this.updateGlobalState("awsUseCrossRegionInference", awsUseCrossRegionInference);
+		await this.updateGlobalState("awsProfile", awsProfile);
+		await this.updateGlobalState("awsUseProfile", awsUseProfile);
+		await this.updateGlobalState("vertexProjectId", vertexProjectId);
+		await this.updateGlobalState("vertexRegion", vertexRegion);
+		await this.updateGlobalState("openAiBaseUrl", openAiBaseUrl);
+		await this.storeSecret("openAiApiKey", openAiApiKey);
+		await this.updateGlobalState("openAiModelId", openAiModelId);
+		await this.updateGlobalState("openAiModelInfo", openAiModelInfo);
+		await this.updateGlobalState("ollamaModelId", ollamaModelId);
+		await this.updateGlobalState("ollamaBaseUrl", ollamaBaseUrl);
+		await this.updateGlobalState("lmStudioModelId", lmStudioModelId);
+		await this.updateGlobalState("lmStudioBaseUrl", lmStudioBaseUrl);
+		await this.updateGlobalState("anthropicBaseUrl", anthropicBaseUrl);
+		await this.storeSecret("geminiApiKey", geminiApiKey);
+		await this.storeSecret("openAiNativeApiKey", openAiNativeApiKey);
+		await this.storeSecret("deepSeekApiKey", deepSeekApiKey);
+		await this.storeSecret("requestyApiKey", requestyApiKey);
+		await this.storeSecret("togetherApiKey", togetherApiKey);
+		await this.storeSecret("qwenApiKey", qwenApiKey);
+		await this.storeSecret("mistralApiKey", mistralApiKey);
+		await this.storeSecret("liteLlmApiKey", liteLlmApiKey);
+		await this.updateGlobalState("azureApiVersion", azureApiVersion);
+		await this.updateGlobalState("openRouterModelId", openRouterModelId);
+		await this.updateGlobalState("openRouterModelInfo", openRouterModelInfo);
+		await this.updateGlobalState("vsCodeLmModelSelector", vsCodeLmModelSelector);
+		await this.updateGlobalState("liteLlmBaseUrl", liteLlmBaseUrl);
+		await this.updateGlobalState("liteLlmModelId", liteLlmModelId);
+		await this.updateGlobalState("qwenApiLine", qwenApiLine);
+		await this.updateGlobalState("requestyModelId", requestyModelId);
+		await this.updateGlobalState("togetherModelId", togetherModelId);
+
+		// Update API handler in Cline instance if it exists
+		if (this.cline) {
+			this.cline.api = buildApiHandler(config);
+		}
+
+		await this.postStateToWebview();
+	}
+
 	// MCP
 
 	async getDocumentsPath(): Promise<string> {
@@ -1248,7 +1346,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
-	private async downloadMcp(mcpId: string) {
+	async downloadMcp(mcpId: string) {
 		try {
 			// First check if we already have this MCP server installed
 			const servers = this.mcpHub?.getServers() || []
