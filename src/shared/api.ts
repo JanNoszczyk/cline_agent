@@ -468,7 +468,7 @@ export const openAiNativeModels = {
 		supportsPromptCache: false,
 		inputPrice: 75,
 		outputPrice: 150,
-	}
+	},
 } as const satisfies Record<string, ModelInfo>
 
 // Azure OpenAI
