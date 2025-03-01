@@ -1,5 +1,19 @@
 # Cline Agent API Integration Project Rules
 
+## Critical Development Guidelines
+
+- **No Mock Objects**: Never use mock objects or fake workarounds that compromise the objective and end-to-end working of the app. Always try to fix underlying problems.
+
+- **Preserve Existing Code**: Don't delete or change big chunks of files from the repo without explicit permission from the user. Focus on local changes.
+
+- **Avoid Unnecessary Scripts**: Don't create bash scripts to run certain things unnecessarily. Only make ones that will b run often.
+
+- **Dependency Management First**: Before making changes to old files that you haven't been working on (especially changes that might result from dependency version mismatch), try updating dependencies to the right version first.
+
+- **Large File Handling**: Never read files bigger than 5k lines into context, especially JSON files. If such files are encountered, ask the user what to do next.
+
+- **Docker Command Optimization**: When running docker commands like build, run, compose, etc., use the quiet flag (e.g., --progress=quiet) to prevent the AI from hanging.
+
 ## Project Structure
 
 - **API Server Files**: JavaScript/TypeScript implementations in the root directory
