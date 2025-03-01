@@ -16,7 +16,6 @@ The current focus is on maintaining a reliable API server that communicates with
 
 3. **Testing Framework**
    - Docker API testing framework
-   - Chess game testing scripts for end-to-end testing
    - Comprehensive API endpoint testing
 
 ## Recent Changes
@@ -92,5 +91,4 @@ The API tests cover all endpoints including basic connectivity, authentication, 
 
 ### Testing Strategy
 - Using Docker API server tests to verify basic functionality and authentication
-- Implementing chess game tests for end-to-end testing
 - Testing each API endpoint with both success and error scenarios

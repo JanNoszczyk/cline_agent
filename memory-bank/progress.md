@@ -23,7 +23,6 @@
 - ✅ Docker API server tests (test-docker-api.js)
 - ✅ Automated Docker API test script (run-docker-api-tests.sh)
 - ✅ Detailed documentation for Docker API testing (README-docker-api-testing.md)
-- ✅ Chess game testing scripts for end-to-end testing
 
 ## What's Left to Build
 

@@ -3,14 +3,14 @@
 /**
  * Consolidated API Server for Cline
  *
- * This is a standalone version of the API server that can be used without requiring the VSCode extension.
- * It provides all the functionality of the original API server with a mock implementation of ClineProvider.
+ * This is a standalone version of the API server that requires the VSCode extension with a real ClineProvider.
+ * It provides all the functionality of the original API server without any mock implementations.
  *
  * Features:
  * - Express-based API server with all endpoints from the original implementation
  * - API key authentication
  * - CORS support
- * - Mock ClineProvider implementation for standalone use
+ * - Proper error handling when ClineProvider is not available
  * - Comprehensive error handling
  */
 
@@ -19,231 +19,22 @@ const express = require("express")
 const http = require("http")
 
 /**
- * Mock ClineProvider implementation
- *
- * This class provides a mock implementation of the ClineProvider interface
- * for standalone use without requiring the VSCode extension.
+ * This API server requires a real ClineProvider instance from the VSCode extension.
+ * It does not use any mock implementations and will return appropriate errors
+ * when the real provider is not available.
  */
-class MockClineProvider {
-	constructor() {
-		// Initialize state
-		this.state = {
-			currentTaskId: null,
-			taskHistory: [],
-			apiConfiguration: {
-				apiProvider: "anthropic",
-				apiModelId: "claude-3-7-sonnet-20250219",
-				apiKey: "",
-			},
-			customInstructions: "",
-			autoApprovalSettings: {
-				enabled: false,
-				maxRequests: 10,
-				tools: [],
-			},
-			browserSettings: {
-				autoApprove: false,
-			},
-			chatSettings: {
-				mode: "act",
-			},
-			mcpMarketplaceCatalog: {
-				servers: [],
-			},
-		}
-
-		// Initialize MCP hub
-		this.mcpHub = {
-			toggleServerDisabled: async (serverName, disabled) => {
-				console.log(`Toggling server ${serverName} disabled: ${disabled}`)
-				return true
-			},
-			toggleToolAutoApprove: async (serverName, toolName, autoApprove) => {
-				console.log(`Toggling tool ${toolName} on server ${serverName} auto-approve: ${autoApprove}`)
-				return true
-			},
-			restartConnection: async (serverName) => {
-				console.log(`Restarting connection to server ${serverName}`)
-				return true
-			},
-			deleteServer: async (serverName) => {
-				console.log(`Deleting server ${serverName}`)
-				return true
-			},
-		}
-	}
-
-	// State management methods
-	async getGlobalState(key) {
-		return this.state[key]
-	}
-
-	async updateGlobalState(key, value) {
-		this.state[key] = value
-		return true
-	}
-
-	// Task management methods
-	async initClineWithTask(task, images) {
-		const taskId = `task-${Date.now()}`
-		const historyItem = {
-			id: taskId,
-			task,
-			images: images || [],
-			timestamp: Date.now(),
-			messages: [],
-		}
-
-		this.state.currentTaskId = taskId
-		this.state.taskHistory = [historyItem, ...this.state.taskHistory]
-
-		return true
-	}
-
-	async getTaskWithId(taskId) {
-		const historyItem = this.state.taskHistory.find((item) => item.id === taskId)
-		if (!historyItem) {
-			throw new Error("Task not found.")
-		}
-		return { historyItem }
-	}
-
-	async initClineWithHistoryItem(historyItem) {
-		this.state.currentTaskId = historyItem.id
-		return true
-	}
-
-	async cancelTask() {
-		// In a real implementation, this would cancel the current task
-		console.log("Cancelling task")
-		return true
-	}
-
-	async deleteTaskWithId(taskId) {
-		this.state.taskHistory = this.state.taskHistory.filter((item) => item.id !== taskId)
-		if (this.state.currentTaskId === taskId) {
-			this.state.currentTaskId = null
-		}
-		return true
-	}
-
-	async exportTaskWithId(taskId) {
-		const { historyItem } = await this.getTaskWithId(taskId)
-		return {
-			...historyItem,
-			exportFormat: "1.0",
-		}
-	}
-
-	// Interaction methods
-	async handleWebviewAskResponse(response, text, images) {
-		const taskId = this.state.currentTaskId
-		if (!taskId) {
-			throw new Error("No active task.")
-		}
-
-		const taskIndex = this.state.taskHistory.findIndex((item) => item.id === taskId)
-		if (taskIndex === -1) {
-			throw new Error("Task not found.")
-		}
-
-		const message = {
-			type: "response",
-			response,
-			text: text || "",
-			images: images || [],
-			timestamp: Date.now(),
-		}
-
-		this.state.taskHistory[taskIndex].messages.push(message)
-
-		return true
-	}
-
-	// Webview management methods
-	async getStateToPostToWebview() {
-		return this.state
-	}
-
-	async postMessageToWebview(message) {
-		console.log("Posting message to webview:", message)
-		return true
-	}
-
-	// Settings management methods
-	async updateApiConfiguration(config) {
-		this.state.apiConfiguration = {
-			...this.state.apiConfiguration,
-			...config,
-		}
-		return true
-	}
-
-	async updateCustomInstructions(instructions) {
-		this.state.customInstructions = instructions
-		return true
-	}
-
-	async togglePlanActModeWithChatSettings(settings) {
-		this.state.chatSettings = {
-			...this.state.chatSettings,
-			...settings,
-		}
-		return true
-	}
-
-	// Authentication methods
-	async setAuthToken(token) {
-		console.log("Setting auth token")
-		return true
-	}
-
-	async setUserInfo(info) {
-		console.log("Setting user info:", info)
-		return true
-	}
-
-	async handleSignOut() {
-		console.log("Handling sign out")
-		return true
-	}
-
-	// MCP management methods
-	async downloadMcp(mcpId) {
-		console.log(`Downloading MCP: ${mcpId}`)
-		return true
-	}
-
-	// Miscellaneous methods
-	async subscribeEmail(email) {
-		console.log(`Subscribing email: ${email}`)
-		return true
-	}
-}
 
 // Helper function to get the ClineProvider instance
 const getClineProvider = () => {
 	try {
 		// Try to get the real ClineProvider if available
 		if (typeof ClineProvider !== "undefined" && ClineProvider.getVisibleInstance) {
-			const provider = ClineProvider.getVisibleInstance()
-			if (provider) {
-				return provider
-			}
+			return ClineProvider.getVisibleInstance()
 		}
-
-		// Fall back to the mock implementation
-		if (!global.mockClineProvider) {
-			global.mockClineProvider = new MockClineProvider()
-		}
-		return global.mockClineProvider
+		return null
 	} catch (error) {
 		console.error("Error getting ClineProvider:", error.message)
-		// Fall back to the mock implementation
-		if (!global.mockClineProvider) {
-			global.mockClineProvider = new MockClineProvider()
-		}
-		return global.mockClineProvider
+		return null
 	}
 }
 // Port configuration

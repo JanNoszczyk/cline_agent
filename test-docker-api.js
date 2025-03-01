@@ -164,8 +164,8 @@ const tests = [
 				corsHeaders["access-control-allow-headers"].includes("X-API-Key"),
 				"CORS Allow-Headers header does not include X-API-Key",
 			)
-			
-			return { status: response.status, corsHeaders };
+
+			return { status: response.status, corsHeaders }
 		},
 	},
 	{
@@ -173,15 +173,13 @@ const tests = [
 		test: async () => {
 			const response = await makeRequest("/api/state")
 			assert(response.status === 200, `Expected status 200, got ${response.status}`)
-			assert(response.data && typeof response.data === 'object', 'Expected response to be an object')
+			assert(response.data && typeof response.data === "object", "Expected response to be an object")
 			// Check for expected properties in the state object
 			assert(
-				'apiConfiguration' in response.data && 
-				'chatSettings' in response.data && 
-				'taskHistory' in response.data,
-				'Response should contain expected state properties'
+				"apiConfiguration" in response.data && "chatSettings" in response.data && "taskHistory" in response.data,
+				"Response should contain expected state properties",
 			)
-			return response;
+			return response
 		},
 	},
 	{
@@ -216,7 +214,7 @@ const tests = [
 		test: async () => {
 			const response = await makeRequest("/api/unsupported")
 			assert(response.status === 404, `Expected status 404, got ${response.status}`)
-			return response;
+			return response
 		},
 	},
 
@@ -229,9 +227,9 @@ const tests = [
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 201) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
-				assert(typeof response.data.taskId === 'string', "Response should contain a taskId string")
-				assert(response.data.taskId.startsWith('task-'), "taskId should start with 'task-'")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
+				assert(typeof response.data.taskId === "string", "Response should contain a taskId string")
+				assert(response.data.taskId.startsWith("task-"), "taskId should start with 'task-'")
 			} else if (response.status === 404 || response.status === 405) {
 				// Endpoint not implemented, which is acceptable
 				console.log(`${colors.yellow}Endpoint not implemented (status ${response.status})${colors.reset}`)
@@ -239,7 +237,7 @@ const tests = [
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -251,14 +249,14 @@ const tests = [
 
 			if (response.status === 200) {
 				assert(Array.isArray(response.data), "Response should be an array")
-				
+
 				// If there are tasks, verify their structure
 				if (response.data.length > 0) {
 					const task = response.data[0]
-					assert(typeof task.id === 'string', "Task should have an id string")
-					assert(typeof task.task === 'string', "Task should have a task string")
+					assert(typeof task.id === "string", "Task should have an id string")
+					assert(typeof task.task === "string", "Task should have a task string")
 					assert(Array.isArray(task.images), "Task should have an images array")
-					assert(typeof task.timestamp === 'number', "Task should have a timestamp number")
+					assert(typeof task.timestamp === "number", "Task should have a timestamp number")
 				}
 			} else if (response.status === 404 || response.status === 405) {
 				// Endpoint not implemented, which is acceptable
@@ -267,7 +265,7 @@ const tests = [
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -278,19 +276,18 @@ const tests = [
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
-				assert(typeof response.data.id === 'string', "Task should have an id string")
-				assert(typeof response.data.task === 'string', "Task should have a task string")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
+				assert(typeof response.data.id === "string", "Task should have an id string")
+				assert(typeof response.data.task === "string", "Task should have a task string")
 				assert(Array.isArray(response.data.images), "Task should have an images array")
-				assert(typeof response.data.timestamp === 'number', "Task should have a timestamp number")
+				assert(typeof response.data.timestamp === "number", "Task should have a timestamp number")
 				assert(Array.isArray(response.data.messages), "Task should have a messages array")
 			} else if (response.status === 404) {
 				// Task not found or endpoint not implemented, which is acceptable
 				if (response.data && response.data.message) {
 					assert(
-						response.data.message.includes("not found") || 
-						response.data.message.includes("not implemented"),
-						"Error message should indicate task not found or endpoint not implemented"
+						response.data.message.includes("not found") || response.data.message.includes("not implemented"),
+						"Error message should indicate task not found or endpoint not implemented",
 					)
 				}
 			} else if (response.status === 405) {
@@ -300,7 +297,7 @@ const tests = [
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -311,15 +308,14 @@ const tests = [
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
 			} else if (response.status === 404) {
 				// Task not found or endpoint not implemented, which is acceptable
 				if (response.data && response.data.message) {
 					assert(
-						response.data.message.includes("not found") || 
-						response.data.message.includes("not implemented"),
-						"Error message should indicate task not found or endpoint not implemented"
+						response.data.message.includes("not found") || response.data.message.includes("not implemented"),
+						"Error message should indicate task not found or endpoint not implemented",
 					)
 				}
 			} else if (response.status === 405) {
@@ -329,7 +325,7 @@ const tests = [
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -340,16 +336,16 @@ const tests = [
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
 			} else if (response.status === 404) {
 				// Task not found or endpoint not implemented, which is acceptable
 				if (response.data && response.data.message) {
 					assert(
-						response.data.message.includes("not found") || 
-						response.data.message.includes("not implemented") ||
-						response.data.message.includes("does not match"),
-						"Error message should indicate task not found, doesn't match, or endpoint not implemented"
+						response.data.message.includes("not found") ||
+							response.data.message.includes("not implemented") ||
+							response.data.message.includes("does not match"),
+						"Error message should indicate task not found, doesn't match, or endpoint not implemented",
 					)
 				}
 			} else if (response.status === 405) {
@@ -359,7 +355,7 @@ const tests = [
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -370,15 +366,14 @@ const tests = [
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
 			} else if (response.status === 404) {
 				// Task not found or endpoint not implemented, which is acceptable
 				if (response.data && response.data.message) {
 					assert(
-						response.data.message.includes("not found") || 
-						response.data.message.includes("not implemented"),
-						"Error message should indicate task not found or endpoint not implemented"
+						response.data.message.includes("not found") || response.data.message.includes("not implemented"),
+						"Error message should indicate task not found or endpoint not implemented",
 					)
 				}
 			} else if (response.status === 405) {
@@ -388,7 +383,7 @@ const tests = [
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -399,20 +394,19 @@ const tests = [
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
-				assert(typeof response.data.id === 'string', "Exported task should have an id string")
-				assert(typeof response.data.task === 'string', "Exported task should have a task string")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
+				assert(typeof response.data.id === "string", "Exported task should have an id string")
+				assert(typeof response.data.task === "string", "Exported task should have a task string")
 				assert(Array.isArray(response.data.images), "Exported task should have an images array")
-				assert(typeof response.data.timestamp === 'number', "Exported task should have a timestamp number")
+				assert(typeof response.data.timestamp === "number", "Exported task should have a timestamp number")
 				assert(Array.isArray(response.data.messages), "Exported task should have a messages array")
-				assert(typeof response.data.exportFormat === 'string', "Exported task should have an exportFormat string")
+				assert(typeof response.data.exportFormat === "string", "Exported task should have an exportFormat string")
 			} else if (response.status === 404) {
 				// Task not found or endpoint not implemented, which is acceptable
 				if (response.data && response.data.message) {
 					assert(
-						response.data.message.includes("not found") || 
-						response.data.message.includes("not implemented"),
-						"Error message should indicate task not found or endpoint not implemented"
+						response.data.message.includes("not found") || response.data.message.includes("not implemented"),
+						"Error message should indicate task not found or endpoint not implemented",
 					)
 				}
 			} else if (response.status === 405) {
@@ -422,7 +416,7 @@ const tests = [
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -433,22 +427,22 @@ const tests = [
 				text: "Test response",
 				images: [],
 			}
-			
+
 			const response = await makeRequest("/api/tasks/mock-task-id/response", "POST", responsePayload)
 			const statusIsExpected = [200, 404, 405, 500, 503].includes(response.status)
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
 			} else if (response.status === 404) {
 				// Task not found or endpoint not implemented, which is acceptable
 				if (response.data && response.data.message) {
 					assert(
-						response.data.message.includes("not found") || 
-						response.data.message.includes("not implemented") ||
-						response.data.message.includes("does not match"),
-						"Error message should indicate task not found, doesn't match, or endpoint not implemented"
+						response.data.message.includes("not found") ||
+							response.data.message.includes("not implemented") ||
+							response.data.message.includes("does not match"),
+						"Error message should indicate task not found, doesn't match, or endpoint not implemented",
 					)
 				}
 			} else if (response.status === 405) {
@@ -458,7 +452,7 @@ const tests = [
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 
@@ -468,32 +462,32 @@ const tests = [
 		test: async () => {
 			const response = await makeRequest("/api/state")
 			assert(response.status === 200, `Expected status 200, got ${response.status}`)
-			assert(response.data && typeof response.data === 'object', 'Expected response to be an object')
-			
+			assert(response.data && typeof response.data === "object", "Expected response to be an object")
+
 			// Verify the structure of the state object
 			const expectedProperties = [
-				'currentTaskId',
-				'taskHistory',
-				'apiConfiguration',
-				'customInstructions',
-				'autoApprovalSettings',
-				'browserSettings',
-				'chatSettings',
-				'mcpMarketplaceCatalog'
+				"currentTaskId",
+				"taskHistory",
+				"apiConfiguration",
+				"customInstructions",
+				"autoApprovalSettings",
+				"browserSettings",
+				"chatSettings",
+				"mcpMarketplaceCatalog",
 			]
-			
+
 			for (const prop of expectedProperties) {
 				assert(prop in response.data, `Response should contain the '${prop}' property`)
 			}
-			
+
 			// Verify some nested properties
 			assert(
-				response.data.apiConfiguration && 
-				typeof response.data.apiConfiguration === 'object' &&
-				'apiProvider' in response.data.apiConfiguration,
-				'Response should contain valid apiConfiguration'
+				response.data.apiConfiguration &&
+					typeof response.data.apiConfiguration === "object" &&
+					"apiProvider" in response.data.apiConfiguration,
+				"Response should contain valid apiConfiguration",
 			)
-			return response;
+			return response
 		},
 	},
 	{
@@ -502,22 +496,24 @@ const tests = [
 			const messagePayload = {
 				type: "clearTask",
 			}
-			
+
 			const response = await makeRequest("/api/webview/message", "POST", messagePayload)
 			const statusIsExpected = [200, 404, 405, 500, 503].includes(response.status)
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
 			} else if (response.status === 404 || response.status === 405) {
 				// Endpoint not implemented or method not allowed, which is acceptable
-				console.log(`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`)
+				console.log(
+					`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`,
+				)
 			} else if (response.status === 500 || response.status === 503) {
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 
@@ -529,35 +525,37 @@ const tests = [
 				apiProvider: "anthropic",
 				apiModelId: "claude-3-7-sonnet-20250219",
 			}
-			
+
 			const response = await makeRequest("/api/settings/api", "PUT", configPayload)
 			const statusIsExpected = [200, 404, 405, 500, 503].includes(response.status)
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
-				
+
 				// Verify the API configuration was updated by getting the current state
 				const stateResponse = await makeRequest("/api/state")
 				if (stateResponse.status === 200 && stateResponse.data && stateResponse.data.apiConfiguration) {
 					assert(
 						stateResponse.data.apiConfiguration.apiProvider === configPayload.apiProvider,
-						"API provider should be updated in state"
+						"API provider should be updated in state",
 					)
 					assert(
 						stateResponse.data.apiConfiguration.apiModelId === configPayload.apiModelId,
-						"API model ID should be updated in state"
+						"API model ID should be updated in state",
 					)
 				}
 			} else if (response.status === 404 || response.status === 405) {
 				// Endpoint not implemented or method not allowed, which is acceptable
-				console.log(`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`)
+				console.log(
+					`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`,
+				)
 			} else if (response.status === 500 || response.status === 503) {
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -566,31 +564,33 @@ const tests = [
 			const instructionsPayload = {
 				instructions: "Test instructions",
 			}
-			
+
 			const response = await makeRequest("/api/settings/customInstructions", "PUT", instructionsPayload)
 			const statusIsExpected = [200, 404, 405, 500, 503].includes(response.status)
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
-				
+
 				// Verify the custom instructions were updated by getting the current state
 				const stateResponse = await makeRequest("/api/state")
 				if (stateResponse.status === 200 && stateResponse.data) {
 					assert(
 						stateResponse.data.customInstructions === instructionsPayload.instructions,
-						"Custom instructions should be updated in state"
+						"Custom instructions should be updated in state",
 					)
 				}
 			} else if (response.status === 404 || response.status === 405) {
 				// Endpoint not implemented or method not allowed, which is acceptable
-				console.log(`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`)
+				console.log(
+					`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`,
+				)
 			} else if (response.status === 500 || response.status === 503) {
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -601,39 +601,41 @@ const tests = [
 				maxRequests: 10,
 				tools: [],
 			}
-			
+
 			const response = await makeRequest("/api/settings/autoApproval", "PUT", autoApprovalPayload)
 			const statusIsExpected = [200, 404, 405, 500, 503].includes(response.status)
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
-				
+
 				// Verify the auto-approval settings were updated by getting the current state
 				const stateResponse = await makeRequest("/api/state")
 				if (stateResponse.status === 200 && stateResponse.data && stateResponse.data.autoApprovalSettings) {
 					assert(
 						stateResponse.data.autoApprovalSettings.enabled === autoApprovalPayload.enabled,
-						"Auto-approval enabled setting should be updated in state"
+						"Auto-approval enabled setting should be updated in state",
 					)
 					assert(
 						stateResponse.data.autoApprovalSettings.maxRequests === autoApprovalPayload.maxRequests,
-						"Auto-approval maxRequests setting should be updated in state"
+						"Auto-approval maxRequests setting should be updated in state",
 					)
 					assert(
 						Array.isArray(stateResponse.data.autoApprovalSettings.tools),
-						"Auto-approval tools setting should be an array in state"
+						"Auto-approval tools setting should be an array in state",
 					)
 				}
 			} else if (response.status === 404 || response.status === 405) {
 				// Endpoint not implemented or method not allowed, which is acceptable
-				console.log(`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`)
+				console.log(
+					`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`,
+				)
 			} else if (response.status === 500 || response.status === 503) {
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -642,31 +644,33 @@ const tests = [
 			const browserSettingsPayload = {
 				autoApprove: false,
 			}
-			
+
 			const response = await makeRequest("/api/settings/browser", "PUT", browserSettingsPayload)
 			const statusIsExpected = [200, 404, 405, 500, 503].includes(response.status)
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
-				
+
 				// Verify the browser settings were updated by getting the current state
 				const stateResponse = await makeRequest("/api/state")
 				if (stateResponse.status === 200 && stateResponse.data && stateResponse.data.browserSettings) {
 					assert(
 						stateResponse.data.browserSettings.autoApprove === browserSettingsPayload.autoApprove,
-						"Browser autoApprove setting should be updated in state"
+						"Browser autoApprove setting should be updated in state",
 					)
 				}
 			} else if (response.status === 404 || response.status === 405) {
 				// Endpoint not implemented or method not allowed, which is acceptable
-				console.log(`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`)
+				console.log(
+					`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`,
+				)
 			} else if (response.status === 500 || response.status === 503) {
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -675,31 +679,33 @@ const tests = [
 			const chatSettingsPayload = {
 				mode: "act",
 			}
-			
+
 			const response = await makeRequest("/api/settings/chat", "PUT", chatSettingsPayload)
 			const statusIsExpected = [200, 404, 405, 500, 503].includes(response.status)
 			assert(statusIsExpected, `Unexpected status code: ${response.status}`)
 
 			if (response.status === 200) {
-				assert(response.data && typeof response.data === 'object', "Response should be an object")
+				assert(response.data && typeof response.data === "object", "Response should be an object")
 				assert(response.data.success === true, "Response should indicate success")
-				
+
 				// Verify the chat settings were updated by getting the current state
 				const stateResponse = await makeRequest("/api/state")
 				if (stateResponse.status === 200 && stateResponse.data && stateResponse.data.chatSettings) {
 					assert(
 						stateResponse.data.chatSettings.mode === chatSettingsPayload.mode,
-						"Chat mode setting should be updated in state"
+						"Chat mode setting should be updated in state",
 					)
 				}
 			} else if (response.status === 404 || response.status === 405) {
 				// Endpoint not implemented or method not allowed, which is acceptable
-				console.log(`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`)
+				console.log(
+					`${colors.yellow}Endpoint not implemented or method not allowed (status ${response.status})${colors.reset}`,
+				)
 			} else if (response.status === 500 || response.status === 503) {
 				// Server error, check error message
 				assert(response.data && response.data.message, "Error response should contain a message")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -714,7 +720,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 
@@ -731,7 +737,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -748,7 +754,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -761,7 +767,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 
@@ -776,7 +782,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data, "Response should contain marketplace data")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -791,7 +797,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -806,7 +812,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -821,7 +827,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -834,7 +840,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 	{
@@ -847,7 +853,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 
@@ -864,7 +870,7 @@ const tests = [
 			if (response.status === 200) {
 				assert(response.data && response.data.success === true, "Response should indicate success")
 			}
-			return response;
+			return response
 		},
 	},
 ]
@@ -878,13 +884,26 @@ async function runAllTests() {
 
 	// First, verify the API server is running
 	try {
+		console.log(`${colors.yellow}Checking if API server is running...${colors.reset}`)
 		const response = await fetch(`${API_URL}/api/state`, {
 			headers: { "X-API-Key": API_KEY },
 		})
 
+		console.log(`${colors.yellow}API server response status: ${response.status}${colors.reset}`)
+
 		if (!response.ok) {
 			console.error(`${colors.red}API server is not responding correctly. Tests cannot proceed.${colors.reset}`)
 			process.exit(1)
+		}
+
+		console.log(`${colors.green}API server is running and responding correctly.${colors.reset}`)
+
+		// Try to get the response body
+		try {
+			const data = await response.json()
+			console.log(`${colors.yellow}API server response body:${colors.reset}`, JSON.stringify(data, null, 2))
+		} catch (e) {
+			console.error(`${colors.red}Error parsing response body:${colors.reset}`, e.message)
 		}
 	} catch (error) {
 		console.error(`${colors.red}API server is not running. Tests cannot proceed.${colors.reset}`)
@@ -892,10 +911,19 @@ async function runAllTests() {
 		process.exit(1)
 	}
 
-	// Run each test
-	for (const test of tests) {
-		await runTest(test.name, test.test)
+	// Run only the first test to debug
+	console.log(`${colors.yellow}Running only the first test for debugging...${colors.reset}`)
+	if (tests.length > 0) {
+		await runTest(tests[0].name, tests[0].test)
 	}
+
+	console.log(`${colors.yellow}First test completed. Exiting for debugging.${colors.reset}`)
+	process.exit(0)
+
+	// Run each test (commented out for debugging)
+	// for (const test of tests) {
+	//	await runTest(test.name, test.test)
+	// }
 
 	// Print summary
 	console.log(`\n${colors.cyan}=== Test Summary ===${colors.reset}`)

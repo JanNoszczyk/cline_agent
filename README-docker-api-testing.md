@@ -4,10 +4,9 @@ This guide explains how to test all endpoints of the Docker API server using the
 
 ## Overview
 
-The testing suite consists of two main components:
+The testing suite consists of:
 
-1. **test-docker-api.js**: Comprehensive test script that tests basic connectivity, authentication, CORS, and all API endpoints defined in the API documentation
-2. **run-docker-api-tests.sh**: A shell script that sets up the environment and runs the tests
+**test-docker-api.js**: Test script that tests basic connectivity, authentication, CORS, and all API endpoints defined in the API documentation
 
 ## Prerequisites
 
@@ -18,22 +17,13 @@ The testing suite consists of two main components:
 
 ## Running the Tests
 
-The easiest way to run all tests is to use the provided shell script:
+To run the Docker API tests:
 
-```bash
-./run-docker-api-tests.sh
-```
+1. Make sure the Docker container is running
+2. Install required npm packages (node-fetch)
+3. Run the test script
 
-This script will:
-1. Check if Docker is running
-2. Verify if the Cline Docker container is running (and start it if not)
-3. Check if the API server is accessible
-4. Install required npm packages (node-fetch)
-5. Run the comprehensive API tests
-
-## Manual Testing
-
-If you prefer to run the tests manually, you can do so with the following commands:
+## Running the Tests Manually
 
 ```bash
 # Make sure the Docker container is running
