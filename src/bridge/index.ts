@@ -165,13 +165,13 @@ export function registerClineBridge(context: vscode.ExtensionContext, outputChan
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("claude.openMention", async (mention: string) => {
-      Logger.log(`Bridge: Opening mention ${mention}`)
-      const provider = ClineProvider.getVisibleInstance()
-      if (!provider) {
-        throw new Error("No visible Cline provider found")
-      }
-      // Using type assertion since this method will be implemented later
-      await (provider as any).openMention(mention)
+			Logger.log(`Bridge: Opening mention ${mention}`)
+			const provider = ClineProvider.getVisibleInstance()
+			if (!provider) {
+				throw new Error("No visible Cline provider found")
+			}
+			// Using type assertion since this method will be implemented later
+			await (provider as any).openMention(mention)
 			return true
 		}),
 	)
