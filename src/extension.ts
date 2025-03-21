@@ -9,6 +9,7 @@ import "./utils/path" // necessary to have access to String.prototype.toPosix
 import { DIFF_VIEW_URI_SCHEME } from "./integrations/editor/DiffViewProvider"
 import assert from "node:assert"
 import { telemetryService } from "./services/telemetry/TelemetryService"
+import { registerClineBridge } from "./bridge"
 
 /*
 Built using https://github.com/microsoft/vscode-webview-ui-toolkit
@@ -29,6 +30,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	Logger.initialize(outputChannel)
 	Logger.log("Cline extension activated")
+
+	// Register the Cline Bridge
+	registerClineBridge(context, outputChannel)
 
 	const sidebarProvider = new ClineProvider(context, outputChannel)
 

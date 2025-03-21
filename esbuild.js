@@ -59,6 +59,13 @@ const copyWasmFiles = {
 				const filename = `tree-sitter-${lang}.wasm`
 				fs.copyFileSync(path.join(languageWasmDir, filename), path.join(targetDir, filename))
 			})
+
+			// Copy bridge files
+			const bridgeDir = path.join(__dirname, "dist", "bridge")
+			if (!fs.existsSync(bridgeDir)) {
+				fs.mkdirSync(bridgeDir, { recursive: true })
+			}
+			fs.copyFileSync(path.join(__dirname, "src", "bridge", "cline_bridge.js"), path.join(bridgeDir, "cline_bridge.js"))
 		})
 	},
 }

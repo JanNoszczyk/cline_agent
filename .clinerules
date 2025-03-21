@@ -1,517 +1,139 @@
-# Cline Extension Architecture & Development Guide
+# Cline Bridge Integration Rules
 
-## Project Overview
+## Project Structure
 
-Cline is a VSCode extension that provides AI assistance through a combination of a core extension backend and a React-based webview frontend. The extension is built with TypeScript and follows a modular architecture pattern.
+- **VSCode Extension Bridge**: Located in `src/bridge/` directory
+  - `index.ts`: TypeScript module for registering commands and exposing ClineProvider
+  - `cline_bridge.js`: JavaScript module with functions for the Go server to call
 
-## Architecture Overview
+- **Go API Server**: Located in `/Users/jannoszczyk/Documents/Github/frida/sandbox-client/`
+  - `internal/cline/`: Contains the Cline-specific code
+    - `client.go`: Bridge client implementation
+    - `handler.go`: WebSocket handler
+    - `api.go`: HTTP API endpoints
+    - `constants.go`: Message type constants
 
-```mermaid
-graph TB
-    subgraph VSCode Extension Host
-        subgraph Core Extension
-            ExtensionEntry[Extension Entry<br/>src/extension.ts]
-            ClineProvider[ClineProvider<br/>src/core/webview/ClineProvider.ts]
-            ClineClass[Cline Class<br/>src/core/Cline.ts]
-            GlobalState[VSCode Global State]
-            SecretsStorage[VSCode Secrets Storage]
-        end
+## Implementation Patterns
 
-        subgraph Webview UI
-            WebviewApp[React App<br/>webview-ui/src/App.tsx]
-            ExtStateContext[ExtensionStateContext<br/>webview-ui/src/context/ExtensionStateContext.tsx]
-            ReactComponents[React Components]
-        end
+### Bridge Communication Pattern
 
-        subgraph Storage
-            TaskStorage[Task Storage<br/>Per-Task Files & History]
-            CheckpointSystem[Git-based Checkpoints]
-        end
-    end
+The bridge uses a Node.js-based IPC mechanism:
+1. Go code executes a Node.js process with the bridge JavaScript file
+2. JavaScript bridge calls ClineProvider methods
+3. Results are returned as JSON through stdout
 
-    %% Core Extension Data Flow
-    ExtensionEntry --> ClineProvider
-    ClineProvider --> ClineClass
-    ClineClass --> GlobalState
-    ClineClass --> SecretsStorage
-    ClineClass --> TaskStorage
-    ClineClass --> CheckpointSystem
-
-    %% Webview Data Flow
-    WebviewApp --> ExtStateContext
-    ExtStateContext --> ReactComponents
-
-    %% Bidirectional Communication
-    ClineProvider <-->|postMessage| ExtStateContext
-
-    style GlobalState fill:#f9f,stroke:#333,stroke-width:2px
-    style SecretsStorage fill:#f9f,stroke:#333,stroke-width:2px
-    style ExtStateContext fill:#bbf,stroke:#333,stroke-width:2px
-    style ClineProvider fill:#bfb,stroke:#333,stroke-width:2px
+```
+Go Server → Node.js Process → JavaScript Bridge → ClineProvider → VSCode Extension
 ```
 
-## Definitions 
+### Task Management Pattern
 
-- core extension: Anything inside the src folder starting with the Cline.ts file
-- core extension state: Managed by the ClineProvider class in src/core/webview/ClineProvider.ts, which serves as the single source of truth for the extension's state. It manages multiple types of persistent storage (global state, workspace state, and secrets), handles state distribution to both the core extension and webview components, and coordinates state across multiple extension instances. This includes managing API configurations, task history, settings, and MCP configurations.
-- webview: Anything inside the webview-ui. All the react or view's seen by the user and user interaction compone
-- webview state: Managed by ExtensionStateContext in webview-ui/src/context/ExtensionStateContext.tsx, which provides React components with access to the extension's state through a context provider pattern. It maintains local state for UI components, handles real-time updates through message events, manages partial message updates, and provides methods for state modifications. The context includes extension version, messages, task history, theme, API configurations, MCP servers, marketplace catalog, and workspace file paths. It synchronizes with the core extension through VSCode's message passing system and provides type-safe access to state through a custom hook (useExtensionState).
+Tasks follow a lifecycle:
+1. **Initialization**: `handleTaskInit` creates a new task
+2. **Execution**: Task runs with potential responses via `handleTaskResponse`
+3. **Completion/Cancellation**: Task completes or is cancelled via `handleTaskCancel`
 
-### Core Extension State
+### State Management Pattern
 
-The `ClineProvider` class manages multiple types of persistent storage:
+State is managed through:
+1. **State Requests**: `handleStateRequest` gets current state
+2. **Settings Updates**: `handleSettingsUpdate` updates settings
+3. **Mode Updates**: `handleChatModeUpdate` toggles between plan and act modes
 
-- **Global State:** Stored across all VSCode instances. Used for settings and data that should persist globally.
-- **Workspace State:** Specific to the current workspace. Used for task-specific data and settings.
-- **Secrets:** Secure storage for sensitive information like API keys.
+### Authentication Pattern
 
-The `ClineProvider` handles the distribution of state to both the core extension and webview components. It also coordinates state across multiple extension instances, ensuring consistency.
+Authentication uses:
+1. **API Key**: Required in HTTP headers for WebSocket connections
+2. **Task ID Validation**: Ensures operations are performed on the correct task
 
-### Webview State
+## Technical Details
 
-The `ExtensionStateContext` in `webview-ui/src/context/ExtensionStateContext.tsx` provides React components with access to the extension's state. It uses a context provider pattern and maintains local state for UI components. The context includes:
+### VSCode Command Registration
 
-- Extension version
-- Messages
-- Task history
-- Theme
-- API configurations
-- MCP servers
-- Marketplace catalog
-- Workspace file paths
-
-It synchronizes with the core extension through VSCode's message passing system and provides type-safe access to the state via a custom hook (`useExtensionState`).
-
-## Core Extension (Cline.ts)
-
-The Cline class is the heart of the extension, managing task execution, state persistence, and tool coordination. Each task runs in its own instance of the Cline class, ensuring isolation and proper state management.
-
-### Task Execution Loop
-
-The core task execution loop follows this pattern:
-
+Commands are registered in `src/bridge/index.ts` using:
 ```typescript
-class Cline {
-  async initiateTaskLoop(userContent: UserContent, isNewTask: boolean) {
-    while (!this.abort) {
-      // 1. Make API request and stream response
-      const stream = this.attemptApiRequest()
-      
-      // 2. Parse and present content blocks
-      for await (const chunk of stream) {
-        switch (chunk.type) {
-          case "text":
-            // Parse into content blocks
-            this.assistantMessageContent = parseAssistantMessage(chunk.text)
-            // Present blocks to user
-            await this.presentAssistantMessage()
-            break
-        }
-      }
-      
-      // 3. Wait for tool execution to complete
-      await pWaitFor(() => this.userMessageContentReady)
-      
-      // 4. Continue loop with tool result
-      const recDidEndLoop = await this.recursivelyMakeClineRequests(
-        this.userMessageContent
-      )
-    }
+context.subscriptions.push(
+  vscode.commands.registerCommand("claude.commandName", async (...) => {
+    // Implementation
+  })
+)
+```
+
+### JavaScript Bridge Export
+
+The JavaScript bridge exports functions using CommonJS module pattern:
+```javascript
+module.exports = {
+  functionName: async function(...) {
+    // Implementation
   }
 }
 ```
 
-### Message Streaming System
+### Go Bridge Client
 
-The streaming system handles real-time updates and partial content:
+The Go bridge client uses a semaphore for concurrency control:
+```go
+// Acquire a semaphore slot
+bc.semaphore <- struct{}{}
+defer func() { <-bc.semaphore }()
+```
 
-```typescript
-class Cline {
-  async presentAssistantMessage() {
-    // Handle streaming locks to prevent race conditions
-    if (this.presentAssistantMessageLocked) {
-      this.presentAssistantMessageHasPendingUpdates = true
-      return
-    }
-    this.presentAssistantMessageLocked = true
+### WebSocket Message Format
 
-    // Present current content block
-    const block = this.assistantMessageContent[this.currentStreamingContentIndex]
-    
-    // Handle different types of content
-    switch (block.type) {
-      case "text":
-        await this.say("text", content, undefined, block.partial)
-        break
-      case "tool_use":
-        // Handle tool execution
-        break
-    }
-
-    // Move to next block if complete
-    if (!block.partial) {
-      this.currentStreamingContentIndex++
-    }
-  }
+WebSocket messages follow this format:
+```json
+{
+  "type": "message_type",
+  "payload": { /* message-specific data */ },
+  "id": "optional_message_id"
 }
 ```
 
-### Tool Execution Flow
+## Known Challenges
 
-Tools follow a strict execution pattern:
+1. **IPC Efficiency**: The current Node.js-based IPC mechanism is not the most efficient
+2. **Error Handling**: Error recovery could be improved, especially for interrupted tasks
+3. **Security**: The API key authentication is basic and could be enhanced
+4. **Container Path Resolution**: Ensuring correct path resolution in containerized environments
+5. **Node.js Dependency**: Requiring Node.js in the container environment
 
-```typescript
-class Cline {
-  async executeToolWithApproval(block: ToolBlock) {
-    // 1. Check auto-approval settings
-    if (this.shouldAutoApproveTool(block.name)) {
-      await this.say("tool", message)
-      this.consecutiveAutoApprovedRequestsCount++
-    } else {
-      // 2. Request user approval
-      const didApprove = await askApproval("tool", message)
-      if (!didApprove) {
-        this.didRejectTool = true
-        return
-      }
-    }
+## Evolution of Project Decisions
 
-    // 3. Execute tool
-    const result = await this.executeTool(block)
+1. Initial implementation uses Node.js for simplicity, but future versions may use a more efficient IPC mechanism
+2. The bridge exposes ClineProvider to the global scope, which is a pragmatic solution but not ideal for security
+3. Task tracking is implemented in the Go server to maintain state across connections
+4. Retry mechanism with exponential backoff was added to handle transient failures in containerized environments
 
-    // 4. Save checkpoint
-    await this.saveCheckpoint()
+## Container Deployment Patterns
 
-    // 5. Return result to API
-    return result
-  }
-}
-```
+### VSIX Installation Pattern
 
-### Error Handling & Recovery
+When deploying as a VSIX in a container:
+1. Install the VSIX file in the VSCode server
+2. Configure the Go server to find the bridge JavaScript file at the correct location:
+   ```
+   /path/to/vscode-server/extensions/saoudrizwan.claude-dev-x.y.z/dist/bridge/cline_bridge.js
+   ```
 
-The system includes robust error handling:
+### Container Configuration Pattern
 
-```typescript
-class Cline {
-  async handleError(action: string, error: Error) {
-    // 1. Check if task was abandoned
-    if (this.abandoned) return
-    
-    // 2. Format error message
-    const errorString = `Error ${action}: ${error.message}`
-    
-    // 3. Present error to user
-    await this.say("error", errorString)
-    
-    // 4. Add error to tool results
-    pushToolResult(formatResponse.toolError(errorString))
-    
-    // 5. Cleanup resources
-    await this.diffViewProvider.revertChanges()
-    await this.browserSession.closeBrowser()
-  }
-}
-```
+The container should be configured with:
+1. **Volume Mounting**: Mount the VSCode extensions directory
+   ```
+   -v /path/to/extensions:/path/in/container/extensions
+   ```
+2. **Environment Variables**: Set required environment variables
+   ```
+   -e API_AUTH_TOKEN=your_api_key
+   ```
+3. **Network Configuration**: Configure network for WebSocket connections
+   ```
+   --network=host or -p 8080:8080
+   ```
 
-### API Request & Token Management
+## Tool Usage Patterns
 
-The Cline class handles API requests with built-in retry, streaming, and token management:
-
-```typescript
-class Cline {
-  async *attemptApiRequest(previousApiReqIndex: number): ApiStream {
-    // 1. Wait for MCP servers to connect
-    await pWaitFor(() => this.providerRef.deref()?.mcpHub?.isConnecting !== true)
-
-    // 2. Manage context window
-    const previousRequest = this.clineMessages[previousApiReqIndex]
-    if (previousRequest?.text) {
-      const { tokensIn, tokensOut } = JSON.parse(previousRequest.text)
-      const totalTokens = (tokensIn || 0) + (tokensOut || 0)
-      
-      // Truncate conversation if approaching context limit
-      if (totalTokens >= maxAllowedSize) {
-        this.conversationHistoryDeletedRange = getNextTruncationRange(
-          this.apiConversationHistory,
-          this.conversationHistoryDeletedRange,
-          totalTokens / 2 > maxAllowedSize ? "quarter" : "half"
-        )
-      }
-    }
-
-    // 3. Handle streaming with automatic retry
-    try {
-      this.isWaitingForFirstChunk = true
-      const firstChunk = await iterator.next()
-      yield firstChunk.value
-      this.isWaitingForFirstChunk = false
-      
-      // Stream remaining chunks
-      yield* iterator
-    } catch (error) {
-      // 4. Error handling with retry
-      if (isOpenRouter && !this.didAutomaticallyRetryFailedApiRequest) {
-        await setTimeoutPromise(1000)
-        this.didAutomaticallyRetryFailedApiRequest = true
-        yield* this.attemptApiRequest(previousApiReqIndex)
-        return
-      }
-      
-      // 5. Ask user to retry if automatic retry failed
-      const { response } = await this.ask(
-        "api_req_failed",
-        this.formatErrorWithStatusCode(error)
-      )
-      if (response === "yesButtonClicked") {
-        await this.say("api_req_retried")
-        yield* this.attemptApiRequest(previousApiReqIndex)
-        return
-      }
-    }
-  }
-}
-```
-
-Key features:
-
-1. **Context Window Management**
-   - Tracks token usage across requests
-   - Automatically truncates conversation when needed
-   - Preserves important context while freeing space
-   - Handles different model context sizes
-
-2. **Streaming Architecture**
-   - Real-time chunk processing
-   - Partial content handling
-   - Race condition prevention
-   - Error recovery during streaming
-
-3. **Error Handling**
-   - Automatic retry for transient failures
-   - User-prompted retry for persistent issues
-   - Detailed error reporting
-   - State cleanup on failure
-
-4. **Token Tracking**
-   - Per-request token counting
-   - Cumulative usage tracking
-   - Cost calculation
-   - Cache hit monitoring
-
-### Task State & Resumption
-
-The Cline class provides robust task state management and resumption capabilities:
-
-```typescript
-class Cline {
-  async resumeTaskFromHistory() {
-    // 1. Load saved state
-    this.clineMessages = await this.getSavedClineMessages()
-    this.apiConversationHistory = await this.getSavedApiConversationHistory()
-
-    // 2. Handle interrupted tool executions
-    const lastMessage = this.apiConversationHistory[this.apiConversationHistory.length - 1]
-    if (lastMessage.role === "assistant") {
-      const toolUseBlocks = content.filter(block => block.type === "tool_use")
-      if (toolUseBlocks.length > 0) {
-        // Add interrupted tool responses
-        const toolResponses = toolUseBlocks.map(block => ({
-          type: "tool_result",
-          tool_use_id: block.id,
-          content: "Task was interrupted before this tool call could be completed."
-        }))
-        modifiedOldUserContent = [...toolResponses]
-      }
-    }
-
-    // 3. Notify about interruption
-    const agoText = this.getTimeAgoText(lastMessage?.ts)
-    newUserContent.push({
-      type: "text",
-      text: `[TASK RESUMPTION] This task was interrupted ${agoText}. It may or may not be complete, so please reassess the task context.`
-    })
-
-    // 4. Resume task execution
-    await this.initiateTaskLoop(newUserContent, false)
-  }
-
-  private async saveTaskState() {
-    // Save conversation history
-    await this.saveApiConversationHistory()
-    await this.saveClineMessages()
-    
-    // Create checkpoint
-    const commitHash = await this.checkpointTracker?.commit()
-    
-    // Update task history
-    await this.providerRef.deref()?.updateTaskHistory({
-      id: this.taskId,
-      ts: lastMessage.ts,
-      task: taskMessage.text,
-      // ... other metadata
-    })
-  }
-}
-```
-
-Key aspects of task state management:
-
-1. **Task Persistence**
-   - Each task has a unique ID and dedicated storage directory
-   - Conversation history is saved after each message
-   - File changes are tracked through Git-based checkpoints
-   - Terminal output and browser state are preserved
-
-2. **State Recovery**
-   - Tasks can be resumed from any point
-   - Interrupted tool executions are handled gracefully
-   - File changes can be restored from checkpoints
-   - Context is preserved across VSCode sessions
-
-3. **Workspace Synchronization**
-   - File changes are tracked through Git
-   - Checkpoints are created after tool executions
-   - State can be restored to any checkpoint
-   - Changes can be compared between checkpoints
-
-4. **Error Recovery**
-   - Failed API requests can be retried
-   - Interrupted tool executions are marked
-   - Resources are cleaned up properly
-   - User is notified of state changes
-
-## Data Flow & State Management
-
-### Core Extension Role
-
-The core extension (ClineProvider) acts as the single source of truth for all persistent state. It:
-- Manages VSCode global state and secrets storage
-- Coordinates state updates between components
-- Ensures state consistency across webview reloads
-- Handles task-specific state persistence
-- Manages checkpoint creation and restoration
-
-### Terminal Management
-
-The Cline class manages terminal instances and command execution:
-
-```typescript
-class Cline {
-  async executeCommandTool(command: string): Promise<[boolean, ToolResponse]> {
-    // 1. Get or create terminal
-    const terminalInfo = await this.terminalManager.getOrCreateTerminal(cwd)
-    terminalInfo.terminal.show()
-
-    // 2. Execute command with output streaming
-    const process = this.terminalManager.runCommand(terminalInfo, command)
-    
-    // 3. Handle real-time output
-    let result = ""
-    process.on("line", (line) => {
-      result += line + "\n"
-      if (!didContinue) {
-        sendCommandOutput(line)
-      } else {
-        this.say("command_output", line)
-      }
-    })
-
-    // 4. Wait for completion or user feedback
-    let completed = false
-    process.once("completed", () => {
-      completed = true
-    })
-
-    await process
-
-    // 5. Return result
-    if (completed) {
-      return [false, `Command executed.\n${result}`]
-    } else {
-      return [
-        false,
-        `Command is still running in the user's terminal.\n${result}\n\nYou will be updated on the terminal status and new output in the future.`
-      ]
-    }
-  }
-}
-```
-
-Key features:
-1. **Terminal Instance Management**
-   - Multiple terminal support
-   - Terminal state tracking (busy/inactive)
-   - Process cooldown monitoring
-   - Output history per terminal
-
-2. **Command Execution**
-   - Real-time output streaming
-   - User feedback handling
-   - Process state monitoring
-   - Error recovery
-
-### Browser Session Management
-
-The Cline class handles browser automation through Puppeteer:
-
-```typescript
-class Cline {
-  async executeBrowserAction(action: BrowserAction): Promise<BrowserActionResult> {
-    switch (action) {
-      case "launch":
-        // 1. Launch browser with fixed resolution
-        await this.browserSession.launchBrowser()
-        return await this.browserSession.navigateToUrl(url)
-
-      case "click":
-        // 2. Handle click actions with coordinates
-        return await this.browserSession.click(coordinate)
-
-      case "type":
-        // 3. Handle keyboard input
-        return await this.browserSession.type(text)
-
-      case "close":
-        // 4. Clean up resources
-        return await this.browserSession.closeBrowser()
-    }
-  }
-}
-```
-
-Key aspects:
-1. **Browser Control**
-   - Fixed 900x600 resolution window
-   - Single instance per task lifecycle
-   - Automatic cleanup on task completion
-   - Console log capture
-
-2. **Interaction Handling**
-   - Coordinate-based clicking
-   - Keyboard input simulation
-   - Screenshot capture
-   - Error recovery
-
-## Conclusion
-
-This guide provides a comprehensive overview of the Cline extension architecture, with special focus on state management, data persistence, and code organization. Following these patterns ensures robust feature implementation with proper state handling across the extension's components.
-
-Remember:
-- Always persist important state in the extension
-- The core extension exists in the src/ folder
-- Use proper typing for all state and messages
-- Handle errors and edge cases
-- Test state persistence across webview reloads
-- Follow the established patterns for consistency
-- Place new code in appropriate directories
-- Maintain clear separation of concerns
-- Install dependencies in correct package.json
-
-## Contributing
-
-Contributions to the Cline extension are welcome! Please follow these guidelines:
-
-When adding new tools or API providers, follow the existing patterns in the `src/integrations/` and `src/api/providers/` directories, respectively. Ensure that your code is well-documented and includes appropriate error handling.
-
-The `.clineignore` file allows users to specify files and directories that Cline should not access. When implementing new features, respect the `.clineignore` rules and ensure that your code does not attempt to read or modify ignored files.
+1. **Bridge Client**: Use `CallWithRetry` for robust communication with automatic retries
+2. **WebSocket Handler**: Process messages through the `processMessage` method
+3. **HTTP API**: Use the `RegisterRoutes` method to set up endpoints
