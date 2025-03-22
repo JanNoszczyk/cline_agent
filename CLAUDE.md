@@ -389,15 +389,164 @@ The bridge implementation includes several security considerations:
    defer func() { <-bc.semaphore }()
    ```
 
+## WebSocket Bridge Server Implementation
+
+The latest improvement to the bridge is a direct WebSocket server that runs inside the VSCode extension, eliminating the need for Node.js process execution and providing a more robust and efficient communication mechanism.
+
+### Architecture
+
+The WebSocket Bridge Server is implemented in `src/bridge/websocket-server.ts` and provides a direct WebSocket connection between external applications and the Cline extension. The server is started when the extension is activated and runs for the lifetime of the extension.
+
+```mermaid
+graph TB
+    subgraph "VSCode Extension Host"
+        subgraph "Core Extension"
+            ExtensionEntry[Extension Entry<br/>src/extension.ts]
+            ClineProvider[ClineProvider<br/>src/core/webview/ClineProvider.ts]
+            ClineBridge[Cline Bridge<br/>src/bridge/index.ts]
+            WebSocketServer[WebSocket Server<br/>src/bridge/websocket-server.ts]
+        end
+    end
+
+    subgraph "External Applications"
+        Go[Go Applications]
+        Node[Node.js Applications]
+        Python[Python Applications]
+        Other[Other Clients]
+    end
+
+    %% Connections
+    ExtensionEntry --> ClineBridge
+    ClineBridge --> WebSocketServer
+    WebSocketServer --> ClineProvider
+    
+    Go <-->|WebSocket| WebSocketServer
+    Node <-->|WebSocket| WebSocketServer
+    Python <-->|WebSocket| WebSocketServer
+    Other <-->|WebSocket| WebSocketServer
+    
+    style WebSocketServer fill:#f9a,stroke:#333,stroke-width:2px
+```
+
+### Key Features
+
+1. **Direct Communication**: Eliminates the need for Node.js process execution, providing a more direct and efficient communication channel
+2. **Authentication**: Supports API key authentication for secure access
+3. **Concurrent Connections**: Handles multiple client connections simultaneously
+4. **Automatic State Updates**: Broadcasts state updates to connected clients periodically
+5. **Health Monitoring**: Provides health check endpoints for monitoring server status
+6. **Error Handling**: Robust error handling with appropriate client feedback
+
+### Configuration
+
+The WebSocket bridge server can be configured through VS Code settings:
+
+```json
+{
+    "cline.bridge.enabled": true,
+    "cline.bridge.port": 9000,
+    "cline.bridge.apiKey": "your-secure-api-key"
+}
+```
+
+### Message Types
+
+The WebSocket bridge supports the following message types:
+
+```typescript
+export enum MessageType {
+    TaskInit = "task_init",
+    TaskResume = "task_resume",
+    TaskCancel = "task_cancel",
+    TaskResponse = "task_response",
+    TaskStreamChunk = "task_stream_chunk",
+    TaskStreamEnd = "task_stream_end",
+    StateRequest = "state_request",
+    StateUpdate = "state_update",
+    WebviewMessage = "webview_message",
+    SettingsUpdate = "settings_update",
+    ChatModeUpdate = "chat_mode_update",
+    AuthToken = "auth_token",
+    AuthUser = "auth_user",
+    AuthSignout = "auth_signout",
+    McpRequest = "mcp_request",
+    Subscribe = "subscribe",
+    Ping = "ping",
+    Error = "error"
+}
+```
+
+### Example Client Code (Go)
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "github.com/gorilla/websocket"
+    "log"
+    "net/url"
+)
+
+type Message struct {
+    Type    string      `json:"type"`
+    ID      string      `json:"id,omitempty"`
+    TaskID  string      `json:"taskId,omitempty"`
+    Payload interface{} `json:"payload,omitempty"`
+}
+
+func main() {
+    u := url.URL{Scheme: "ws", Host: "localhost:9000", Path: "/"}
+    
+    // Add API key to query string
+    q := u.Query()
+    q.Set("apiKey", "your-secure-api-key")
+    u.RawQuery = q.Encode()
+    
+    log.Printf("Connecting to %s", u.String())
+    
+    c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+    if err != nil {
+        log.Fatal("dial:", err)
+    }
+    defer c.Close()
+    
+    // Send a ping message
+    pingMsg := Message{
+        Type: "ping",
+        ID:   "1",
+    }
+    
+    err = c.WriteJSON(pingMsg)
+    if err != nil {
+        log.Fatal("write:", err)
+    }
+    
+    // Read response
+    _, message, err := c.ReadMessage()
+    if err != nil {
+        log.Fatal("read:", err)
+    }
+    
+    var response Message
+    if err := json.Unmarshal(message, &response); err != nil {
+        log.Fatal("unmarshal:", err)
+    }
+    
+    fmt.Printf("Received: %+v\n", response)
+}
+```
+
 ## Future Improvements
 
-The current implementation uses Node.js to execute JavaScript functions, which is not the most efficient IPC mechanism. Future improvements could include:
+While the WebSocket bridge provides a significant improvement over the Node.js process execution approach, there are still opportunities for further enhancements:
 
-1. **Native IPC**: Implement a more efficient IPC mechanism using native Node.js modules or a dedicated IPC library.
-2. **WebSocket Direct Connection**: Establish a direct WebSocket connection between the Go server and the VSCode extension.
-3. **Enhanced Security**: Implement more robust security measures, such as JWT authentication and HTTPS.
-4. **Performance Optimization**: Optimize the bridge implementation for better performance, especially for high-frequency operations.
-5. **Error Handling**: Improve error handling and recovery mechanisms.
+1. **Enhanced Security**: Implement more robust security measures, such as JWT authentication and HTTPS.
+2. **Client Libraries**: Develop official client libraries for common languages like Go, Python, and Node.js.
+3. **Performance Optimization**: Continue to optimize the bridge implementation for better performance, especially for high-frequency operations.
+4. **Metrics and Monitoring**: Add metrics collection and monitoring capabilities to track usage and performance.
+5. **Event Subscription**: Implement a more sophisticated event subscription model to allow clients to subscribe to specific event types.
 
 ## Deployment Considerations for Container Environments
 

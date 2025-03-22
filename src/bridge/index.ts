@@ -1,13 +1,19 @@
 import * as vscode from "vscode"
 import { ClineProvider } from "../core/webview/ClineProvider"
 import { Logger } from "../services/logging/Logger"
+import { getWebSocketBridgeServer, MessageType } from "./websocket-server"
+
+// Define event handler interfaces if they don't exist in ClineProvider
+interface EventHandlers {
+	onDidChangeGlobalState?: (callback: (key: string, value: any) => void) => void
+	onDidChangeTaskState?: (callback: (taskId: string, state: any) => void) => void
+}
 
 /**
  * Registers the Cline Bridge functionality in the extension
  *
- * This function exposes the ClineProvider to the global scope so that
- * the bridge JavaScript file can access it. It also registers the
- * necessary commands for the bridge to function.
+ * This function registers the necessary commands for the bridge to function
+ * and starts the WebSocket server.
  *
  * @param context The extension context
  * @param outputChannel The output channel for logging
@@ -15,9 +21,82 @@ import { Logger } from "../services/logging/Logger"
 export function registerClineBridge(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
 	Logger.log("Registering Cline Bridge...")
 
-	// Expose ClineProvider to global scope for bridge.js to access
-	// @ts-ignore - Intentionally adding to global scope
-	global.ClineProvider = ClineProvider
+	// No longer need to expose ClineProvider to global scope as we're using WebSocket server
+
+	// Start the WebSocket server - get port and API key from settings
+	const config = vscode.workspace.getConfiguration("cline")
+	const port = config.get<number>("bridge.port") || 9000
+	const apiKey = config.get<string>("bridge.apiKey") || ""
+
+	// Start WebSocket server and add it to context.subscriptions so it gets disposed properly
+	const wsServer = getWebSocketBridgeServer(port, apiKey)
+	wsServer.start().catch((err) => {
+		Logger.log(`Failed to start WebSocket server: ${err.message}`)
+	})
+
+	// Add to subscriptions so it gets disposed when extension is deactivated
+	context.subscriptions.push({
+		dispose: () => {
+			wsServer.stop().catch((err) => {
+				Logger.log(`Error stopping WebSocket server: ${err.message}`)
+			})
+		},
+	})
+
+	// Register event listeners for ClineProvider state changes
+	// Get the visible provider instance
+	const provider = ClineProvider.getVisibleInstance()
+	if (provider) {
+		// Cast provider to EventHandlers to access event methods if they exist
+		const providerWithEvents = provider as unknown as EventHandlers
+
+		// Listen for state changes
+		if (providerWithEvents.onDidChangeGlobalState) {
+			providerWithEvents.onDidChangeGlobalState((key, value) => {
+				// Broadcast the state change to subscribed clients
+				wsServer.broadcastEvent("state_change", { key, value })
+			})
+		}
+
+		// Listen for task state changes
+		if (providerWithEvents.onDidChangeTaskState) {
+			providerWithEvents.onDidChangeTaskState((taskId, state) => {
+				// Broadcast to clients subscribed to this task
+				wsServer.broadcastToTask(taskId, {
+					type: MessageType.StateUpdate,
+					taskId,
+					payload: { state },
+				})
+			})
+		}
+	}
+
+	// Register a command to restart the WebSocket server
+	context.subscriptions.push(
+		vscode.commands.registerCommand("claude.restartBridgeServer", async () => {
+			Logger.log("Bridge: Restarting WebSocket server")
+			await wsServer.stop()
+
+			// Update config
+			const newConfig = vscode.workspace.getConfiguration("cline")
+			const newPort = newConfig.get<number>("bridge.port") || 9000
+			const newApiKey = newConfig.get<string>("bridge.apiKey") || ""
+
+			// Apply new settings
+			const newServer = getWebSocketBridgeServer(newPort, newApiKey)
+			await newServer.start()
+
+			return { success: true }
+		}),
+	)
+
+	// Register a command to get WebSocket server status
+	context.subscriptions.push(
+		vscode.commands.registerCommand("claude.getBridgeServerStatus", () => {
+			Logger.log("Bridge: Getting WebSocket server status")
+			return wsServer.getStatus()
+		}),
+	)
 
 	// Register commands that the bridge might need
 	context.subscriptions.push(
