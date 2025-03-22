@@ -60,12 +60,12 @@ const copyWasmFiles = {
 				fs.copyFileSync(path.join(languageWasmDir, filename), path.join(targetDir, filename))
 			})
 
-			// Copy bridge files
+			// Create bridge directory for future use
 			const bridgeDir = path.join(__dirname, "dist", "bridge")
 			if (!fs.existsSync(bridgeDir)) {
 				fs.mkdirSync(bridgeDir, { recursive: true })
 			}
-			fs.copyFileSync(path.join(__dirname, "src", "bridge", "cline_bridge.js"), path.join(bridgeDir, "cline_bridge.js"))
+			// No longer need to copy cline_bridge.js as we now use WebSocket server
 		})
 	},
 }
