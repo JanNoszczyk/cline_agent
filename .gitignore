@@ -11,4 +11,6 @@ pnpm-lock.yaml
 
 .clineignore
 
+package-lock.json
+
 .env
