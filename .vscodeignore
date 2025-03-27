@@ -42,3 +42,6 @@ docs/**
 
 # Include icons
 !assets/icons/**
+
+# Ignore temporary build artifacts
+tmp_vsix/**
