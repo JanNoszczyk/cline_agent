@@ -128,22 +128,37 @@ export class WebSocketBridgeServer {
 
 	constructor(port: number = 9000, apiKey: string = "", goServerApiKey: string = "") {
 		this.port = port
-		this.apiKey = apiKey // Key for clients connecting to this bridge
-		// Use provided Go server API key or get from config/env
-		this.goServerApiKey =
-			goServerApiKey || vscode.workspace.getConfiguration("cline").get<string>("goServer.apiKey") || "default-dev-token"
+		this.apiKey = apiKey // Key for clients connecting to THIS bridge
 
-		// Determine Go Server URL dynamically
+		// Use API_AUTH_TOKEN environment variable for connecting TO the Go server, aligning with Go server's expectation.
+		this.goServerApiKey = process.env.API_AUTH_TOKEN || "default-dev-token"
+		if (this.goServerApiKey === "default-dev-token") {
+			Logger.log(
+				"WARN: Using default API key ('default-dev-token') to connect to Go server. Ensure API_AUTH_TOKEN is set in the environment.",
+			)
+		} else {
+			Logger.log("Go Client: Using API_AUTH_TOKEN environment variable for authentication.")
+		}
+		// Remove reliance on vscode settings for this key:
+		// goServerApiKey || vscode.workspace.getConfiguration("cline").get<string>("goServer.apiKey") || "default-dev-token"
+
+		// Determine Go Server URL dynamically using the required environment variable
 		const goPortEnv = process.env.CLINE_GO_WS_PORT
 		const goPort = goPortEnv ? parseInt(goPortEnv, 10) : null
+
 		if (goPort && !isNaN(goPort)) {
 			this.goServerUrl = `ws://localhost:${goPort}/ws`
-			Logger.log(`Go Client: Using dynamic port ${goPort} from environment variable CLINE_GO_WS_PORT.`)
-		} else {
-			this.goServerUrl = "ws://localhost:3001/ws" // Fallback
 			Logger.log(
-				`WARN: CLINE_GO_WS_PORT environment variable not found or invalid. Falling back to default ${this.goServerUrl}.`,
+				`Go Client: Using dynamic port ${goPort} from environment variable CLINE_GO_WS_PORT. URL: ${this.goServerUrl}`,
 			)
+		} else {
+			// If the environment variable is missing or invalid, we cannot connect. Log an error.
+			const errorMsg = `ERROR: CLINE_GO_WS_PORT environment variable is missing or invalid ('${goPortEnv}'). Cannot determine Go client WebSocket URL.`
+			Logger.log(errorMsg)
+			// Set a placeholder URL or throw an error to prevent connection attempts?
+			// Setting an invalid URL will cause connection errors later, which might be acceptable.
+			this.goServerUrl = "ws://invalid-host:0" // Set invalid URL to prevent accidental connection to fallback
+			// Alternatively, could throw new Error(errorMsg); but that might stop the extension host.
 		}
 
 		this.clients = new Map()
