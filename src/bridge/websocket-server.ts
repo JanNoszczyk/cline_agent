@@ -200,29 +200,11 @@ export class WebSocketBridgeServer {
 					const message = messageData.toString()
 					msgData = JSON.parse(message) as WebSocketMessage // Assign here
 
-					// Determine if the message should be forwarded to the Go server
-					if (this.isMessageForGoServer(msgData.type)) {
-						if (this.goClient && this.goClient.readyState === WebSocketReadyState.OPEN) {
-							this.sendMessageToGoServer(message) // Forward raw message string
-						} else {
-							Logger.log(`WebSocket: Go client not connected. Cannot forward message type ${msgData.type}.`)
-							// Optionally send an error back to the client
-							ws.send(
-								JSON.stringify({
-									type: MessageType.Error,
-									id: msgData.id,
-									payload: { error: "Go backend service unavailable" },
-								}),
-							)
-							this.metrics.messagesSent++
-						}
-					} else {
-						// Process the message locally using the bridge's logic
-						const response = await this.processLocalMessage(msgData, ws)
-						if (response) {
-							ws.send(JSON.stringify(response))
-							this.metrics.messagesSent++
-						}
+					// Process ALL messages locally using the bridge's logic
+					const response = await this.processLocalMessage(msgData, ws)
+					if (response) {
+						ws.send(JSON.stringify(response))
+						this.metrics.messagesSent++
 					}
 				} catch (error) {
 					this.metrics.errors++
@@ -270,18 +252,39 @@ export class WebSocketBridgeServer {
 
 	/**
 	 * Determines if a message type should be forwarded to the Go server.
+	 * NOTE: Based on feedback, this should always return false now.
+	 * Keeping the function structure for potential future changes but logic is disabled.
 	 */
 	private isMessageForGoServer(type: MessageType): boolean {
-		switch (type) {
-			case MessageType.TaskInit:
-			case MessageType.TaskResume:
-			case MessageType.TaskCancel:
-			case MessageType.TaskResponse:
-			case MessageType.StateRequest: // Requesting state FROM Go
-			case MessageType.SettingsUpdate:
-			case MessageType.ChatModeUpdate:
-			case MessageType.AuthToken:
-			case MessageType.AuthUser:
+		// switch (type) {
+		// 	case MessageType.TaskInit:
+		// 	case MessageType.TaskResume:
+		// 	case MessageType.TaskCancel:
+		// 	case MessageType.TaskResponse:
+		// 	case MessageType.StateRequest: // Requesting state FROM Go
+		// 	// case MessageType.SettingsUpdate: // <-- Handled locally
+		// 	case MessageType.ChatModeUpdate: // <-- Should likely be local via command
+		// 	case MessageType.AuthToken:      // <-- Should likely be local via command
+		// 	case MessageType.AuthUser:       // <-- Should likely be local via command
+		// 	case MessageType.AuthSignout:    // <-- Should likely be local via command
+		// 	case MessageType.McpRequest:     // <-- Should likely be local via command
+		// 	case MessageType.FileOpen:       // <-- Handled locally
+		// 	case MessageType.ImageOpen:      // <-- Handled locally
+		// 	case MessageType.MentionOpen:    // <-- Handled locally
+		// 	case MessageType.ImagesSelected: // <-- Handled locally
+		// 	case MessageType.CheckpointDiff: // <-- Handled locally
+		// 	case MessageType.CheckpointRestore: // <-- Handled locally
+		// 	case MessageType.CheckLatestChanges: // <-- Handled locally
+		// 	case MessageType.Subscribe: // Email subscription <-- Should likely be local via command
+		// 		return true // No longer forwarding any of these
+		// 	default:
+		// 		return false
+		// }
+		return false // ALL messages are handled locally now
+	}
+
+	/**
+	 * Connects to the Go WebSocket server.
 			case MessageType.AuthSignout:
 			case MessageType.McpRequest:
 			case MessageType.FileOpen:
@@ -312,6 +315,7 @@ export class WebSocketBridgeServer {
 		}
 
 		this.isConnectingToGo = true
+		Logger.log(`>>> [connectToGoServer] START: Attempting connection to ${this.goServerUrl}`) // <<< ADDED LOG
 		Logger.log(`Go Client: Attempting to connect to ${this.goServerUrl}...`)
 
 		// Clear any existing reconnect timer
@@ -322,6 +326,7 @@ export class WebSocketBridgeServer {
 
 		// Clean up old client if exists
 		if (this.goClient) {
+			Logger.log(">>> [connectToGoServer] Cleaning up old goClient instance.") // <<< ADDED LOG
 			this.goClient.removeAllListeners()
 			this.goClient.terminate() // Force close if needed
 		}
@@ -331,11 +336,13 @@ export class WebSocketBridgeServer {
 				"X-API-Key": this.goServerApiKey,
 			},
 		}
+		Logger.log(`>>> [connectToGoServer] Using headers: ${JSON.stringify(options.headers)}`) // <<< ADDED LOG
 
 		this.goClient = new WebSocket(this.goServerUrl, options)
 
 		this.goClient.on("open", () => {
 			this.isConnectingToGo = false
+			Logger.log(">>> [connectToGoServer] 'open' event: Connection established successfully.") // <<< ADDED LOG
 			Logger.log("Go Client: Connection established successfully.")
 			// Clear reconnect timer on successful connection
 			if (this.reconnectInterval) {
@@ -364,6 +371,7 @@ export class WebSocketBridgeServer {
 
 		this.goClient.on("close", (code, reason) => {
 			this.isConnectingToGo = false
+			Logger.log(`>>> [connectToGoServer] 'close' event: Connection closed. Code: ${code}, Reason: ${reason.toString()}`) // <<< ADDED LOG
 			Logger.log(`Go Client: Connection closed. Code: ${code}, Reason: ${reason.toString()}`)
 			this.goClient = null
 			// Attempt to reconnect after a delay, unless explicitly stopped
@@ -379,6 +387,7 @@ export class WebSocketBridgeServer {
 		this.goClient.on("error", (error) => {
 			this.isConnectingToGo = false
 			this.metrics.errors++
+			Logger.log(`>>> [connectToGoServer] 'error' event: ${error.message}`) // <<< ADDED LOG
 			Logger.log(`ERROR: Go Client: Connection error: ${error.message}`)
 			// The 'close' event will usually follow, triggering reconnection logic
 			// If 'close' doesn't fire, we might need to trigger reconnect here too
@@ -654,7 +663,148 @@ export class WebSocketBridgeServer {
 					this.eventSubscriptions.delete(clientData.id)
 					return { type, id, payload: { success: true } }
 
-				// Potentially handle WebviewMessage locally if needed
+				// --- Messages previously forwarded, now handled locally via commands ---
+
+				case MessageType.TaskInit:
+					if (!provider) throw new Error("Provider required for TaskInit")
+					if (!payload?.task) throw new Error("Payload 'task' required for TaskInit")
+					const taskId = await vscode.commands.executeCommand("claude.initTask", payload.task, payload.images || [])
+					return { type, id, payload: { success: true, taskId } }
+
+				case MessageType.TaskResume:
+					// Assuming a command like 'claude.resumeTask' exists or needs adding
+					// Need taskId and potentially other payload data
+					if (!provider) throw new Error("Provider required for TaskResume")
+					if (!taskId) throw new Error("taskId required for TaskResume")
+					Logger.log(`WebSocket: TaskResume command ('claude.resumeTask'?) not fully implemented yet.`) // Changed warn to log
+					// await vscode.commands.executeCommand("claude.resumeTask", taskId, payload);
+					return { type, id, payload: { success: true, message: "Resume handling pending" } }
+
+				case MessageType.TaskCancel:
+					if (!provider) throw new Error("Provider required for TaskCancel")
+					await vscode.commands.executeCommand("claude.cancelTask")
+					return { type, id, payload: { success: true } }
+
+				case MessageType.TaskResponse:
+					if (!provider) throw new Error("Provider required for TaskResponse")
+					if (!payload?.response) throw new Error("Payload 'response' required for TaskResponse")
+					await vscode.commands.executeCommand(
+						"claude.handleResponse",
+						payload.response,
+						payload.text || "",
+						payload.images || [],
+					)
+					return { type, id, payload: { success: true } }
+
+				case MessageType.StateRequest:
+					if (!provider) throw new Error("Provider required for StateRequest")
+					const state = await vscode.commands.executeCommand("claude.getState")
+					return { type, id, payload: { success: true, state } }
+
+				case MessageType.SettingsUpdate:
+					if (!provider) throw new Error("Provider required for SettingsUpdate")
+					if (!payload) throw new Error("Payload required for SettingsUpdate")
+					await vscode.commands.executeCommand("claude.updateApiConfig", payload)
+					return { type, id, payload: { success: true } }
+
+				case MessageType.ChatModeUpdate:
+					if (!provider) throw new Error("Provider required for ChatModeUpdate")
+					if (!payload) throw new Error("Payload required for ChatModeUpdate")
+					await vscode.commands.executeCommand("claude.toggleMode", payload)
+					return { type, id, payload: { success: true } }
+
+				case MessageType.AuthToken:
+					// Assuming a command like 'claude.setAuthToken' exists or needs adding
+					if (!provider) throw new Error("Provider required for AuthToken")
+					if (!payload?.token) throw new Error("Payload 'token' required for AuthToken")
+					Logger.log(`WebSocket: AuthToken command ('claude.setAuthToken'?) not fully implemented yet.`) // Changed warn to log
+					// await vscode.commands.executeCommand("claude.setAuthToken", payload.token);
+					return { type, id, payload: { success: true, message: "AuthToken handling pending" } }
+
+				case MessageType.AuthUser:
+					// Assuming a command like 'claude.setAuthUser' exists or needs adding
+					if (!provider) throw new Error("Provider required for AuthUser")
+					if (!payload?.user) throw new Error("Payload 'user' required for AuthUser")
+					Logger.log(`WebSocket: AuthUser command ('claude.setAuthUser'?) not fully implemented yet.`) // Changed warn to log
+					// await vscode.commands.executeCommand("claude.setAuthUser", payload.user);
+					return { type, id, payload: { success: true, message: "AuthUser handling pending" } }
+
+				case MessageType.AuthSignout:
+					// Assuming a command like 'claude.signOut' exists or needs adding
+					if (!provider) throw new Error("Provider required for AuthSignout")
+					Logger.log(`WebSocket: AuthSignout command ('claude.signOut'?) not fully implemented yet.`) // Changed warn to log
+					// await vscode.commands.executeCommand("claude.signOut");
+					return { type, id, payload: { success: true, message: "AuthSignout handling pending" } }
+
+				case MessageType.McpRequest:
+					// Assuming a command like 'claude.handleMcpRequest' exists or needs adding
+					if (!provider) throw new Error("Provider required for McpRequest")
+					if (!payload) throw new Error("Payload required for McpRequest")
+					Logger.log(`WebSocket: McpRequest command ('claude.handleMcpRequest'?) not fully implemented yet.`) // Changed warn to log
+					// const mcpResponse = await vscode.commands.executeCommand("claude.handleMcpRequest", payload);
+					// return { type, id, payload: { success: true, response: mcpResponse } };
+					return { type, id, payload: { success: true, message: "McpRequest handling pending" } }
+
+				case MessageType.FileOpen:
+					if (!payload?.filePath) throw new Error("Payload 'filePath' required for FileOpen")
+					await vscode.commands.executeCommand("claude.openFile", payload.filePath)
+					return { type, id, payload: { success: true } }
+
+				case MessageType.ImageOpen:
+					if (!payload?.imagePath) throw new Error("Payload 'imagePath' required for ImageOpen")
+					await vscode.commands.executeCommand("claude.openImage", payload.imagePath)
+					return { type, id, payload: { success: true } }
+
+				case MessageType.MentionOpen:
+					if (!payload?.mention) throw new Error("Payload 'mention' required for MentionOpen")
+					await vscode.commands.executeCommand("claude.openMention", payload.mention)
+					return { type, id, payload: { success: true } }
+
+				case MessageType.ImagesSelected:
+					if (!provider) throw new Error("Provider required for ImagesSelected")
+					const selectedImages = await vscode.commands.executeCommand("claude.selectImages")
+					return { type, id, payload: { success: true, images: selectedImages } }
+
+				case MessageType.CheckpointDiff:
+					if (!provider) throw new Error("Provider required for CheckpointDiff")
+					if (!taskId) throw new Error("taskId required for CheckpointDiff")
+					if (payload?.messageTs === undefined) throw new Error("Payload 'messageTs' required for CheckpointDiff")
+					await vscode.commands.executeCommand(
+						"claude.checkpointDiff",
+						taskId,
+						payload.messageTs,
+						payload.seeNewChangesSinceLastTaskCompletion || false,
+					)
+					return { type, id, payload: { success: true } }
+
+				case MessageType.CheckpointRestore:
+					if (!provider) throw new Error("Provider required for CheckpointRestore")
+					if (!taskId) throw new Error("taskId required for CheckpointRestore")
+					if (payload?.messageTs === undefined) throw new Error("Payload 'messageTs' required for CheckpointRestore")
+					if (!payload?.restoreType) throw new Error("Payload 'restoreType' required for CheckpointRestore")
+					await vscode.commands.executeCommand(
+						"claude.checkpointRestore",
+						taskId,
+						payload.messageTs,
+						payload.restoreType,
+					)
+					return { type, id, payload: { success: true } }
+
+				case MessageType.CheckLatestChanges:
+					if (!provider) throw new Error("Provider required for CheckLatestChanges")
+					if (!taskId) throw new Error("taskId required for CheckLatestChanges")
+					const hasChanges = await vscode.commands.executeCommand("claude.checkLatestTaskCompletionChanges", taskId)
+					return { type, id, payload: { success: true, hasChanges } }
+
+				case MessageType.Subscribe:
+					// Assuming a command like 'claude.subscribeEmail' exists or needs adding
+					if (!provider) throw new Error("Provider required for Subscribe")
+					if (!payload?.email) throw new Error("Payload 'email' required for Subscribe")
+					Logger.log(`WebSocket: Subscribe command ('claude.subscribeEmail'?) not fully implemented yet.`) // Changed warn to log
+					// await vscode.commands.executeCommand("claude.subscribeEmail", payload.email);
+					return { type, id, payload: { success: true, message: "Subscribe handling pending" } }
+
+				// --- Bridge Specific ---
 				case MessageType.WebviewMessage:
 					if (!provider) {
 						throw new Error("ClineProvider not available for WebviewMessage")
