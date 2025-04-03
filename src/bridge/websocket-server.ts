@@ -96,27 +96,28 @@ interface EventSubscription {
 
 // Bridge handler class
 export class WebSocketBridgeServer {
+	private provider: ClineProvider // Store the provider instance
 	private server: http.Server
 	private wss: WebSocketServer
 	private port: number
 	private apiKey: string // API key for clients connecting TO this bridge
-	private goServerApiKey: string // API key to connect TO the Go server
+	// private goServerApiKey: string // REMOVED - No longer connecting out to Go
 	private clients: Map<WebSocket, { id: string; taskId?: string }>
 	private heartbeatInterval: NodeJS.Timeout | null = null
 	private activeConnections: number = 0 // Connections to THIS bridge server
 	private isStarted: boolean = false
 	private eventSubscriptions: Map<string, EventSubscription> = new Map() // Subscriptions to THIS bridge server's events
 
-	// Properties for Go Server Client Connection
-	private goClient: WebSocket | null = null
-	private goServerUrl: string // URL will be determined dynamically
-	private reconnectInterval: NodeJS.Timeout | null = null
-	private isConnectingToGo = false
-	private readonly RECONNECT_DELAY = 5000 // 5 seconds
+	// Properties for Go Server Client Connection - REMOVED
+	// private goClient: WebSocket | null = null
+	// private goServerUrl: string // URL will be determined dynamically
+	// private reconnectInterval: NodeJS.Timeout | null = null
+	// private isConnectingToGo = false
+	// private readonly RECONNECT_DELAY = 5000 // 5 seconds
 
 	private metrics: {
-		messagesReceived: number // From bridge clients + Go server
-		messagesSent: number // To bridge clients + Go server
+		messagesReceived: number // From bridge clients
+		messagesSent: number // To bridge clients
 		errors: number
 		startTime: number
 	} = {
@@ -126,40 +127,15 @@ export class WebSocketBridgeServer {
 		startTime: Date.now(),
 	}
 
-	constructor(port: number = 9000, apiKey: string = "", goServerApiKey: string = "") {
+	// Constructor updated to accept ClineProvider
+	constructor(provider: ClineProvider, port: number = 3002, apiKey: string = "") {
+		// Default port changed to 3002
+		this.provider = provider // Store the provider
 		this.port = port
 		this.apiKey = apiKey // Key for clients connecting to THIS bridge
+		Logger.log(`WebSocket Bridge Server configured for provider, listening on port ${port}`)
 
-		// Use API_AUTH_TOKEN environment variable for connecting TO the Go server, aligning with Go server's expectation.
-		this.goServerApiKey = process.env.API_AUTH_TOKEN || "default-dev-token"
-		if (this.goServerApiKey === "default-dev-token") {
-			Logger.log(
-				"WARN: Using default API key ('default-dev-token') to connect to Go server. Ensure API_AUTH_TOKEN is set in the environment.",
-			)
-		} else {
-			Logger.log("Go Client: Using API_AUTH_TOKEN environment variable for authentication.")
-		}
-		// Remove reliance on vscode settings for this key:
-		// goServerApiKey || vscode.workspace.getConfiguration("cline").get<string>("goServer.apiKey") || "default-dev-token"
-
-		// Determine Go Server URL dynamically using the required environment variable
-		const goPortEnv = process.env.CLINE_GO_WS_PORT
-		const goPort = goPortEnv ? parseInt(goPortEnv, 10) : null
-
-		if (goPort && !isNaN(goPort)) {
-			this.goServerUrl = `ws://localhost:${goPort}/ws`
-			Logger.log(
-				`Go Client: Using dynamic port ${goPort} from environment variable CLINE_GO_WS_PORT. URL: ${this.goServerUrl}`,
-			)
-		} else {
-			// If the environment variable is missing or invalid, we cannot connect. Log an error.
-			const errorMsg = `ERROR: CLINE_GO_WS_PORT environment variable is missing or invalid ('${goPortEnv}'). Cannot determine Go client WebSocket URL.`
-			Logger.log(errorMsg)
-			// Set a placeholder URL or throw an error to prevent connection attempts?
-			// Setting an invalid URL will cause connection errors later, which might be acceptable.
-			this.goServerUrl = "ws://invalid-host:0" // Set invalid URL to prevent accidental connection to fallback
-			// Alternatively, could throw new Error(errorMsg); but that might stop the extension host.
-		}
+		// REMOVED logic related to goServerApiKey and goServerUrl
 
 		this.clients = new Map()
 		this.server = http.createServer(this.handleHttpRequest.bind(this))
@@ -198,12 +174,15 @@ export class WebSocketBridgeServer {
 				let msgData: WebSocketMessage | null = null // Define outside try block
 				try {
 					const message = messageData.toString()
+					Logger.log(`WebSocket: Received raw message from client ${this.clients.get(ws)?.id}: ${message}`) // <-- Added logging
 					msgData = JSON.parse(message) as WebSocketMessage // Assign here
 
 					// Process ALL messages locally using the bridge's logic
 					const response = await this.processLocalMessage(msgData, ws)
 					if (response) {
-						ws.send(JSON.stringify(response))
+						const responseString = JSON.stringify(response)
+						Logger.log(`WebSocket: Sending response to client ${this.clients.get(ws)?.id}: ${responseString}`) // <-- Added logging
+						ws.send(responseString)
 						this.metrics.messagesSent++
 					}
 				} catch (error) {
@@ -235,8 +214,8 @@ export class WebSocketBridgeServer {
 			})
 
 			// Send welcome message to client connecting TO this bridge
-			ws.send(
-				JSON.stringify({
+			try {
+				const welcomeMessage = JSON.stringify({
 					type: "connected",
 					payload: {
 						clientId,
@@ -244,9 +223,22 @@ export class WebSocketBridgeServer {
 						serverVersion: "2.0.1", // Updated version
 						supportedFeatures: ["event_subscription", "forwarding_to_go_server"],
 					},
-				}),
-			)
-			this.metrics.messagesSent++
+				})
+				ws.send(welcomeMessage, (error) => {
+					if (error) {
+						Logger.log(`WebSocket: Error sending welcome message to client ${clientId}: ${error.message}`)
+						// Optionally close the connection if sending the welcome message fails
+						// ws.close();
+					} else {
+						this.metrics.messagesSent++
+					}
+				})
+			} catch (error) {
+				const errorMessage = error instanceof Error ? error.message : "Unknown error"
+				Logger.log(`WebSocket: Error stringifying welcome message for client ${clientId}: ${errorMessage}`)
+				// Optionally close the connection if stringify fails
+				// ws.close();
+			}
 		})
 	}
 
@@ -284,183 +276,22 @@ export class WebSocketBridgeServer {
 	}
 
 	/**
-	 * Connects to the Go WebSocket server.
-			case MessageType.AuthSignout:
-			case MessageType.McpRequest:
-			case MessageType.FileOpen:
-			case MessageType.ImageOpen:
-			case MessageType.MentionOpen:
-			case MessageType.ImagesSelected:
-			case MessageType.CheckpointDiff:
-			case MessageType.CheckpointRestore:
-			case MessageType.CheckLatestChanges:
-			case MessageType.Subscribe: // Email subscription
-				return true
-			default:
-				return false
-		}
-	}
-
-	/**
-	 * Connects to the Go WebSocket server.
+	 * Connects to the Go WebSocket server. - REMOVED
 	 */
-	private connectToGoServer() {
-		if (this.goClient && this.goClient.readyState === WebSocketReadyState.OPEN) {
-			Logger.log("Go Client: Already connected.")
-			return
-		}
-		if (this.isConnectingToGo) {
-			Logger.log("Go Client: Connection attempt already in progress.")
-			return
-		}
-
-		this.isConnectingToGo = true
-		Logger.log(`>>> [connectToGoServer] START: Attempting connection to ${this.goServerUrl}`) // <<< ADDED LOG
-		Logger.log(`Go Client: Attempting to connect to ${this.goServerUrl}...`)
-
-		// Clear any existing reconnect timer
-		if (this.reconnectInterval) {
-			clearTimeout(this.reconnectInterval)
-			this.reconnectInterval = null
-		}
-
-		// Clean up old client if exists
-		if (this.goClient) {
-			Logger.log(">>> [connectToGoServer] Cleaning up old goClient instance.") // <<< ADDED LOG
-			this.goClient.removeAllListeners()
-			this.goClient.terminate() // Force close if needed
-		}
-
-		const options = {
-			headers: {
-				"X-API-Key": this.goServerApiKey,
-			},
-		}
-		Logger.log(`>>> [connectToGoServer] Using headers: ${JSON.stringify(options.headers)}`) // <<< ADDED LOG
-
-		this.goClient = new WebSocket(this.goServerUrl, options)
-
-		this.goClient.on("open", () => {
-			this.isConnectingToGo = false
-			Logger.log(">>> [connectToGoServer] 'open' event: Connection established successfully.") // <<< ADDED LOG
-			Logger.log("Go Client: Connection established successfully.")
-			// Clear reconnect timer on successful connection
-			if (this.reconnectInterval) {
-				clearTimeout(this.reconnectInterval)
-				this.reconnectInterval = null
-			}
-			// Optional: Send a ping or initial message if required by Go server
-			// this.sendMessageToGoServer(JSON.stringify({ type: MessageType.Ping }));
-		})
-
-		this.goClient.on("message", (messageData: Buffer) => {
-			this.metrics.messagesReceived++
-			try {
-				const message = messageData.toString()
-				const msgData = JSON.parse(message) as WebSocketMessage
-				Logger.log(`Go Client: Received message type ${msgData.type}`)
-				// Broadcast message from Go server to relevant bridge clients
-				this.broadcastMessageFromGo(msgData)
-			} catch (error) {
-				this.metrics.errors++
-				Logger.log(
-					`ERROR: Go Client: Error processing message: ${error instanceof Error ? error.message : "Unknown error"}`,
-				)
-			}
-		})
-
-		this.goClient.on("close", (code, reason) => {
-			this.isConnectingToGo = false
-			Logger.log(`>>> [connectToGoServer] 'close' event: Connection closed. Code: ${code}, Reason: ${reason.toString()}`) // <<< ADDED LOG
-			Logger.log(`Go Client: Connection closed. Code: ${code}, Reason: ${reason.toString()}`)
-			this.goClient = null
-			// Attempt to reconnect after a delay, unless explicitly stopped
-			if (this.isStarted && !this.reconnectInterval) {
-				Logger.log(`Go Client: Scheduling reconnect in ${this.RECONNECT_DELAY / 1000} seconds...`)
-				this.reconnectInterval = setTimeout(() => {
-					this.reconnectInterval = null // Clear timer before attempting reconnect
-					this.connectToGoServer()
-				}, this.RECONNECT_DELAY)
-			}
-		})
-
-		this.goClient.on("error", (error) => {
-			this.isConnectingToGo = false
-			this.metrics.errors++
-			Logger.log(`>>> [connectToGoServer] 'error' event: ${error.message}`) // <<< ADDED LOG
-			Logger.log(`ERROR: Go Client: Connection error: ${error.message}`)
-			// The 'close' event will usually follow, triggering reconnection logic
-			// If 'close' doesn't fire, we might need to trigger reconnect here too
-			if (
-				this.goClient &&
-				this.goClient.readyState !== WebSocketReadyState.OPEN &&
-				this.goClient.readyState !== WebSocketReadyState.CONNECTING
-			) {
-				if (this.isStarted && !this.reconnectInterval) {
-					Logger.log(`Go Client: Scheduling reconnect after error in ${this.RECONNECT_DELAY / 1000} seconds...`)
-					this.reconnectInterval = setTimeout(() => {
-						this.reconnectInterval = null
-						this.connectToGoServer()
-					}, this.RECONNECT_DELAY)
-				}
-			}
-		})
-	}
+	// private connectToGoServer() { ... } // REMOVED
 
 	/**
-	 * Sends a message string to the Go server if connected.
+	 * Sends a message string to the Go server if connected. - REMOVED
 	 */
-	private sendMessageToGoServer(message: string) {
-		if (this.goClient && this.goClient.readyState === WebSocketReadyState.OPEN) {
-			this.goClient.send(message)
-			this.metrics.messagesSent++
-			// Logger.log(`Go Client: Sent message: ${message.substring(0, 100)}...`); // Log truncated message
-		} else {
-			Logger.log("WARN: Go Client: Attempted to send message while not connected.")
-			// Optionally queue the message or return an error
-		}
-	}
+	// private sendMessageToGoServer(message: string) { ... } // REMOVED
 
 	/**
-	 * Broadcasts a message received from the Go server to connected bridge clients.
+	 * Broadcasts a message received from the Go server to connected bridge clients. - REMOVED
 	 */
-	private broadcastMessageFromGo(message: WebSocketMessage) {
-		const messageString = JSON.stringify(message)
-		Logger.log(`Broadcasting message from Go (Type: ${message.type}) to ${this.wss.clients.size} bridge clients.`)
-
-		this.wss.clients.forEach((client) => {
-			if (client.readyState === WebSocketReadyState.OPEN) {
-				const clientData = this.clients.get(client)
-				if (!clientData) {
-					return
-				}
-
-				// Basic broadcasting for now. Could add filtering based on taskId or subscriptions later.
-				// Check event subscriptions if applicable
-				const subscription = this.eventSubscriptions.get(clientData.id)
-				if (
-					subscription &&
-					!subscription.eventTypes.includes("*") &&
-					!subscription.eventTypes.includes(message.type) &&
-					!subscription.eventTypes.includes("go_server") // Generic type for all Go messages?
-				) {
-					// Skip if client hasn't subscribed to this type
-					return
-				}
-
-				// If message has a taskId, only send to clients associated with that task?
-				// if (message.taskId && clientData.taskId !== message.taskId) {
-				//     return;
-				// }
-
-				client.send(messageString)
-				// Don't increment metrics.messagesSent here, as it was already counted when Go sent it.
-			}
-		})
-	}
+	// private broadcastMessageFromGo(message: WebSocketMessage) { ... } // REMOVED
 
 	/**
-	 * Starts the WebSocket server and connects to the Go server.
+	 * Starts the WebSocket server.
 	 */
 	public start(): Promise<void> {
 		return new Promise((resolve, reject) => {
@@ -481,8 +312,8 @@ export class WebSocketBridgeServer {
 						this.broadcastStateUpdates() // Broadcasts state to clients of THIS server
 					}, 30000) // Send updates every 30 seconds
 
-					// Attempt to connect to the Go server
-					this.connectToGoServer()
+					// REMOVED: Attempt to connect to the Go server
+					// this.connectToGoServer()
 
 					resolve()
 				})
@@ -510,19 +341,11 @@ export class WebSocketBridgeServer {
 				this.heartbeatInterval = null
 			}
 
-			// Clear reconnect interval for Go client
-			if (this.reconnectInterval) {
-				clearTimeout(this.reconnectInterval)
-				this.reconnectInterval = null
-			}
+			// REMOVED: Clear reconnect interval for Go client
+			// if (this.reconnectInterval) { ... }
 
-			// Close Go client connection
-			if (this.goClient) {
-				Logger.log("Go Client: Closing connection during server stop...")
-				this.goClient.removeAllListeners() // Prevent listeners triggering reconnects during shutdown
-				this.goClient.close()
-				this.goClient = null
-			}
+			// REMOVED: Close Go client connection
+			// if (this.goClient) { ... }
 
 			// Close all client connections to this bridge server
 			this.wss.clients.forEach((client) => {
@@ -544,18 +367,19 @@ export class WebSocketBridgeServer {
 	 */
 	private handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse) {
 		const url = new URL(req.url || "", `http://${req.headers.host}`)
+		Logger.log(`WebSocket: Received HTTP request for path: ${url.pathname}`) // <-- Added logging
 
 		// Health check endpoint
 		if (url.pathname === "/health") {
+			const responseBody = JSON.stringify({
+				status: "ok",
+				bridgeConnections: this.activeConnections,
+				// goClientStatus: REMOVED
+				uptime: process.uptime(),
+			})
+			Logger.log(`WebSocket: Sending HTTP response for /health: ${responseBody}`) // <-- Added logging
 			res.writeHead(200, { "Content-Type": "application/json" })
-			res.end(
-				JSON.stringify({
-					status: "ok",
-					bridgeConnections: this.activeConnections,
-					goClientStatus: this.goClient?.readyState === WebSocketReadyState.OPEN ? "connected" : "disconnected",
-					uptime: process.uptime(),
-				}),
-			)
+			res.end(responseBody)
 			return
 		}
 
@@ -564,13 +388,17 @@ export class WebSocketBridgeServer {
 			// Check API key for THIS bridge server
 			const reqApiKey = req.headers["x-api-key"] as string
 			if (this.apiKey && this.apiKey !== reqApiKey) {
+				const errorBody = JSON.stringify({ error: "Unauthorized" })
+				Logger.log(`WebSocket: Sending HTTP 401 response for /status (Unauthorized): ${errorBody}`) // <-- Added logging
 				res.writeHead(401, { "Content-Type": "application/json" })
-				res.end(JSON.stringify({ error: "Unauthorized" }))
+				res.end(errorBody)
 				return
 			}
 
+			const statusBody = JSON.stringify(this.getStatus())
+			Logger.log(`WebSocket: Sending HTTP response for /status: ${statusBody}`) // <-- Added logging
 			res.writeHead(200, { "Content-Type": "application/json" })
-			res.end(JSON.stringify(this.getStatus())) // Use getStatus method
+			res.end(statusBody) // Use getStatus method
 			return
 		}
 
@@ -579,19 +407,25 @@ export class WebSocketBridgeServer {
 			// Check API key for THIS bridge server
 			const reqApiKey = req.headers["x-api-key"] as string
 			if (this.apiKey && this.apiKey !== reqApiKey) {
+				const errorBody = JSON.stringify({ error: "Unauthorized" })
+				Logger.log(`WebSocket: Sending HTTP 401 response for /metrics (Unauthorized): ${errorBody}`) // <-- Added logging
 				res.writeHead(401, { "Content-Type": "application/json" })
-				res.end(JSON.stringify({ error: "Unauthorized" }))
+				res.end(errorBody)
 				return
 			}
 
+			const metricsBody = JSON.stringify(this.getStatus().metrics)
+			Logger.log(`WebSocket: Sending HTTP response for /metrics: ${metricsBody}`) // <-- Added logging
 			res.writeHead(200, { "Content-Type": "application/json" })
-			res.end(JSON.stringify(this.getStatus().metrics)) // Use getStatus method
+			res.end(metricsBody) // Use getStatus method
 			return
 		}
 
 		// Default response for other routes
+		const notFoundBody = JSON.stringify({ error: "Not found" })
+		Logger.log(`WebSocket: Sending HTTP 404 response for path ${url.pathname}: ${notFoundBody}`) // <-- Added logging
 		res.writeHead(404, { "Content-Type": "application/json" })
-		res.end(JSON.stringify({ error: "Not found" }))
+		res.end(notFoundBody)
 	}
 
 	/**
@@ -625,10 +459,11 @@ export class WebSocketBridgeServer {
 		Logger.log(`WebSocket: Processing local message. Received type: "${type}" (ID: ${id || "N/A"})`) // <-- Added logging
 
 		try {
-			const provider = ClineProvider.getVisibleInstance()
+			// Use the stored provider instance
+			const provider = this.provider
 			if (!provider && type !== MessageType.Ping) {
 				// Allow ping even without provider
-				throw new Error("ClineProvider not available")
+				throw new Error("WebSocketBridgeServer: ClineProvider instance not available")
 			}
 
 			// Process message based on type
@@ -639,8 +474,8 @@ export class WebSocketBridgeServer {
 						id,
 						payload: {
 							timestamp: Date.now(),
-							hasProvider: !!provider,
-							goClientStatus: this.goClient?.readyState,
+							hasProvider: !!this.provider, // Check stored provider
+							// goClientStatus: REMOVED - No longer tracking outgoing Go client
 						},
 					}
 
@@ -664,6 +499,8 @@ export class WebSocketBridgeServer {
 					return { type, id, payload: { success: true } }
 
 				// --- Messages previously forwarded, now handled locally via commands ---
+				// Note: Commands still rely on ClineProvider.getVisibleInstance() internally,
+				// but the bridge itself uses this.provider where needed.
 
 				case MessageType.TaskInit: {
 					if (!provider) {
@@ -672,20 +509,19 @@ export class WebSocketBridgeServer {
 					if (!payload?.task) {
 						throw new Error("Payload 'task' required for TaskInit")
 					}
+					// Command execution still uses the static getter internally
 					const taskId = await vscode.commands.executeCommand("claude.initTask", payload.task, payload.images || [])
 					return { type, id, payload: { success: true, taskId } }
 				}
 
 				case MessageType.TaskResume: {
-					// Assuming a command like 'claude.resumeTask' exists or needs adding
-					// Need taskId and potentially other payload data
 					if (!provider) {
 						throw new Error("Provider required for TaskResume")
 					}
 					if (!taskId) {
 						throw new Error("taskId required for TaskResume")
 					}
-					Logger.log(`WebSocket: TaskResume command ('claude.resumeTask'?) not fully implemented yet.`) // Changed warn to log
+					Logger.log(`WebSocket: TaskResume command ('claude.resumeTask'?) not fully implemented yet.`)
 					// await vscode.commands.executeCommand("claude.resumeTask", taskId, payload);
 					return { type, id, payload: { success: true, message: "Resume handling pending" } }
 				}
@@ -719,18 +555,18 @@ export class WebSocketBridgeServer {
 					}
 					const state = await vscode.commands.executeCommand("claude.getState")
 					return { type, id, payload: { success: true, state } }
-				} // <-- Correct placement for StateRequest closing brace
+				}
 				case MessageType.SettingsUpdate: {
-					Logger.log(`WebSocket: Entering SettingsUpdate case for message ID: ${id || "N/A"}`) // <-- Added logging
+					Logger.log(`WebSocket: Entering SettingsUpdate case for message ID: ${id || "N/A"}`)
 					if (!provider) {
 						throw new Error("Provider required for SettingsUpdate")
 					}
 					if (!payload) {
 						throw new Error("Payload required for SettingsUpdate")
 					}
-					Logger.log(`WebSocket: Executing claude.updateApiConfig with payload: ${JSON.stringify(payload)}`) // <-- Added logging
+					Logger.log(`WebSocket: Executing claude.updateApiConfig with payload: ${JSON.stringify(payload)}`)
 					await vscode.commands.executeCommand("claude.updateApiConfig", payload)
-					Logger.log(`WebSocket: Finished claude.updateApiConfig for message ID: ${id || "N/A"}`) // <-- Added logging
+					Logger.log(`WebSocket: Finished claude.updateApiConfig for message ID: ${id || "N/A"}`)
 					return { type, id, payload: { success: true } }
 				}
 
@@ -746,50 +582,46 @@ export class WebSocketBridgeServer {
 				}
 
 				case MessageType.AuthToken: {
-					// Assuming a command like 'claude.setAuthToken' exists or needs adding
 					if (!provider) {
 						throw new Error("Provider required for AuthToken")
 					}
 					if (!payload?.token) {
 						throw new Error("Payload 'token' required for AuthToken")
 					}
-					Logger.log(`WebSocket: AuthToken command ('claude.setAuthToken'?) not fully implemented yet.`) // Changed warn to log
+					Logger.log(`WebSocket: AuthToken command ('claude.setAuthToken'?) not fully implemented yet.`)
 					// await vscode.commands.executeCommand("claude.setAuthToken", payload.token);
 					return { type, id, payload: { success: true, message: "AuthToken handling pending" } }
 				}
 
 				case MessageType.AuthUser: {
-					// Assuming a command like 'claude.setAuthUser' exists or needs adding
 					if (!provider) {
 						throw new Error("Provider required for AuthUser")
 					}
 					if (!payload?.user) {
 						throw new Error("Payload 'user' required for AuthUser")
 					}
-					Logger.log(`WebSocket: AuthUser command ('claude.setAuthUser'?) not fully implemented yet.`) // Changed warn to log
+					Logger.log(`WebSocket: AuthUser command ('claude.setAuthUser'?) not fully implemented yet.`)
 					// await vscode.commands.executeCommand("claude.setAuthUser", payload.user);
 					return { type, id, payload: { success: true, message: "AuthUser handling pending" } }
 				}
 
 				case MessageType.AuthSignout: {
-					// Assuming a command like 'claude.signOut' exists or needs adding
 					if (!provider) {
 						throw new Error("Provider required for AuthSignout")
 					}
-					Logger.log(`WebSocket: AuthSignout command ('claude.signOut'?) not fully implemented yet.`) // Changed warn to log
+					Logger.log(`WebSocket: AuthSignout command ('claude.signOut'?) not fully implemented yet.`)
 					// await vscode.commands.executeCommand("claude.signOut");
 					return { type, id, payload: { success: true, message: "AuthSignout handling pending" } }
 				}
 
 				case MessageType.McpRequest: {
-					// Assuming a command like 'claude.handleMcpRequest' exists or needs adding
 					if (!provider) {
 						throw new Error("Provider required for McpRequest")
 					}
 					if (!payload) {
 						throw new Error("Payload required for McpRequest")
 					}
-					Logger.log(`WebSocket: McpRequest command ('claude.handleMcpRequest'?) not fully implemented yet.`) // Changed warn to log
+					Logger.log(`WebSocket: McpRequest command ('claude.handleMcpRequest'?) not fully implemented yet.`)
 					// const mcpResponse = await vscode.commands.executeCommand("claude.handleMcpRequest", payload);
 					// return { type, id, payload: { success: true, response: mcpResponse } };
 					return { type, id, payload: { success: true, message: "McpRequest handling pending" } }
@@ -812,6 +644,10 @@ export class WebSocketBridgeServer {
 				}
 
 				case MessageType.MentionOpen: {
+					if (!provider) {
+						// Need provider for this command
+						throw new Error("Provider required for MentionOpen")
+					}
 					if (!payload?.mention) {
 						throw new Error("Payload 'mention' required for MentionOpen")
 					}
@@ -821,6 +657,7 @@ export class WebSocketBridgeServer {
 
 				case MessageType.ImagesSelected: {
 					if (!provider) {
+						// Need provider for this command
 						throw new Error("Provider required for ImagesSelected")
 					}
 					const selectedImages = await vscode.commands.executeCommand("claude.selectImages")
@@ -829,6 +666,7 @@ export class WebSocketBridgeServer {
 
 				case MessageType.CheckpointDiff: {
 					if (!provider) {
+						// Need provider for this command
 						throw new Error("Provider required for CheckpointDiff")
 					}
 					if (!taskId) {
@@ -847,6 +685,7 @@ export class WebSocketBridgeServer {
 				}
 				case MessageType.CheckpointRestore: {
 					if (!provider) {
+						// Need provider for this command
 						throw new Error("Provider required for CheckpointRestore")
 					}
 					if (!taskId) {
@@ -868,6 +707,7 @@ export class WebSocketBridgeServer {
 				}
 				case MessageType.CheckLatestChanges: {
 					if (!provider) {
+						// Need provider for this command
 						throw new Error("Provider required for CheckLatestChanges")
 					}
 					if (!taskId) {
@@ -878,14 +718,14 @@ export class WebSocketBridgeServer {
 				}
 
 				case MessageType.Subscribe: {
-					// Assuming a command like 'claude.subscribeEmail' exists or needs adding
 					if (!provider) {
+						// Need provider for this command
 						throw new Error("Provider required for Subscribe")
 					}
 					if (!payload?.email) {
 						throw new Error("Payload 'email' required for Subscribe")
 					}
-					Logger.log(`WebSocket: Subscribe command ('claude.subscribeEmail'?) not fully implemented yet.`) // Changed warn to log
+					Logger.log(`WebSocket: Subscribe command ('claude.subscribeEmail'?) not fully implemented yet.`)
 					// await vscode.commands.executeCommand("claude.subscribeEmail", payload.email);
 					return { type, id, payload: { success: true, message: "Subscribe handling pending" } }
 				}
@@ -922,9 +762,10 @@ export class WebSocketBridgeServer {
 	 */
 	private async broadcastStateUpdates() {
 		try {
-			const provider = ClineProvider.getVisibleInstance()
+			// Use the stored provider instance
+			const provider = this.provider
 			if (!provider) {
-				// Logger.log("WebSocket: Cannot broadcast state, provider not visible.");
+				Logger.log("WebSocket: Cannot broadcast state, provider instance not available in WebSocketBridgeServer.")
 				return
 			}
 
@@ -947,12 +788,12 @@ export class WebSocketBridgeServer {
 						return // Skip if not subscribed
 					}
 
-					client.send(
-						JSON.stringify({
-							type: MessageType.StateUpdate, // State update from local provider
-							payload: { state },
-						}),
-					)
+					const stateUpdateString = JSON.stringify({
+						type: MessageType.StateUpdate, // State update from local provider
+						payload: { state },
+					})
+					Logger.log(`WebSocket: Broadcasting state update to client ${clientData.id}`) // <-- Added logging
+					client.send(stateUpdateString)
 					// Don't increment metrics here, this is internal broadcast
 				}
 			})
@@ -972,7 +813,9 @@ export class WebSocketBridgeServer {
 				if (subscription && !subscription.eventTypes.includes("*") && !subscription.eventTypes.includes(message.type)) {
 					return // Skip if not subscribed
 				}
-				client.send(JSON.stringify(message))
+				const messageString = JSON.stringify(message)
+				Logger.log(`WebSocket: Broadcasting message type ${message.type} to client ${clientData.id} for task ${taskId}`) // <-- Added logging
+				client.send(messageString)
 				this.metrics.messagesSent++ // Count messages sent to bridge clients
 			}
 		})
@@ -998,7 +841,9 @@ export class WebSocketBridgeServer {
 			}
 
 			if (subscription.eventTypes.includes("*") || subscription.eventTypes.includes(eventType)) {
-				client.send(JSON.stringify(message))
+				const messageString = JSON.stringify(message)
+				Logger.log(`WebSocket: Broadcasting event type ${eventType} to client ${clientData.id}`) // <-- Added logging
+				client.send(messageString)
 				this.metrics.messagesSent++ // Count messages sent to bridge clients
 			}
 		})
@@ -1015,15 +860,7 @@ export class WebSocketBridgeServer {
 	/**
 	 * Updates API key for connecting TO the Go server.
 	 */
-	public updateGoServerApiKey(apiKey: string) {
-		this.goServerApiKey = apiKey
-		Logger.log("WebSocket: Go server API key updated. Restart connection if needed.")
-		// Optionally force reconnect if connection is active
-		if (this.goClient && this.goClient.readyState === WebSocketReadyState.OPEN) {
-			Logger.log("Go Client: Reconnecting with new API key...")
-			this.goClient.close() // Will trigger reconnect logic with new key
-		}
-	}
+	// public updateGoServerApiKey(apiKey: string) { ... } // REMOVED - No longer connecting out
 
 	/**
 	 * Returns server status including Go client connection state.
@@ -1035,15 +872,7 @@ export class WebSocketBridgeServer {
 			running: this.isStarted,
 			port: this.port,
 			bridgeConnections: this.activeConnections,
-			goClient: {
-				url: this.goServerUrl,
-				// Find the key corresponding to the numeric readyState value
-				status:
-					Object.entries(WebSocketReadyState).find(
-						([, value]) => value === (this.goClient?.readyState ?? WebSocketReadyState.CLOSED),
-					)?.[0] ?? "UNKNOWN",
-				readyState: this.goClient?.readyState ?? WebSocketReadyState.CLOSED,
-			},
+			// goClient: { ... }, // REMOVED
 			metrics: {
 				uptime: uptimeMs,
 				uptimeHuman: this.formatUptime(uptimeMs),
@@ -1062,15 +891,24 @@ let websocketServer: WebSocketBridgeServer | null = null
 
 /**
  * Gets or creates the WebSocket bridge server instance.
- * Reads Go server API key from config.
+ * Requires the ClineProvider instance.
  */
-export function getWebSocketBridgeServer(port: number = 9000, apiKey: string = ""): WebSocketBridgeServer {
+export function getWebSocketBridgeServer(
+	provider: ClineProvider,
+	port: number = 3002,
+	apiKey: string = "",
+): WebSocketBridgeServer {
 	if (!websocketServer) {
-		const goServerApiKey = vscode.workspace.getConfiguration("cline").get<string>("goServer.apiKey") || "default-dev-token"
-		websocketServer = new WebSocketBridgeServer(port, apiKey, goServerApiKey)
+		Logger.log(`WebSocket: Creating new WebSocketBridgeServer instance for provider on port ${port}`)
+		websocketServer = new WebSocketBridgeServer(provider, port, apiKey)
 	} else {
-		// Update keys if they changed in config? Or rely on restart command?
-		// For simplicity, let's assume restart is needed for config changes for now.
+		// TODO: Decide how to handle existing server instance.
+		// Option 1: Update existing server's provider, port, apiKey (might be complex if running)
+		// Option 2: Log a warning and return existing instance (simplest)
+		// Option 3: Stop existing and create new (might disrupt clients)
+		// For now, let's log and return existing, assuming provider doesn't change mid-session.
+		Logger.log(`WebSocket: Returning existing WebSocketBridgeServer instance. Port/APIKey updates require restart.`)
+		// Optionally update apiKey if needed: websocketServer.updateApiKey(apiKey);
 	}
 	return websocketServer
 }

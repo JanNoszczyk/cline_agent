@@ -17,21 +17,55 @@ interface EventHandlers {
  *
  * @param context The extension context
  * @param outputChannel The output channel for logging
+ * @param provider The ClineProvider instance
  */
-export function registerClineBridge(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
+export async function registerClineBridge(
+	context: vscode.ExtensionContext,
+	outputChannel: vscode.OutputChannel,
+	provider: ClineProvider, // Add provider parameter
+) {
 	Logger.log("Registering Cline Bridge...")
+
+	// Define an async function to handle storing the API key from the environment
+	const storeApiKeyFromEnv = async () => {
+		const anthropicApiKeyFromEnv = process.env.ANTHROPIC_API_KEY
+		if (anthropicApiKeyFromEnv) {
+			Logger.log("Bridge: Found ANTHROPIC_API_KEY in environment, attempting to store in secrets...")
+			try {
+				await context.secrets.store("apiKey", anthropicApiKeyFromEnv)
+				Logger.log("Bridge: ANTHROPIC_API_KEY stored successfully.")
+			} catch (err: any) {
+				// Explicitly type err as any or unknown
+				Logger.log(`Bridge: Error storing ANTHROPIC_API_KEY: ${err instanceof Error ? err.message : String(err)}`)
+			}
+		} else {
+			Logger.log("Bridge: ANTHROPIC_API_KEY not found in environment. Relying on existing secret storage.")
+		}
+	}
+
+	// Call the async function and WAIT for it to complete before proceeding
+	await storeApiKeyFromEnv()
 
 	// No longer need to expose ClineProvider to global scope as we're using WebSocket server
 
-	// Start the WebSocket server - get port and API key from settings
-	const config = vscode.workspace.getConfiguration("cline")
-	const port = config.get<number>("bridge.port") || 9000
-	const apiKey = config.get<string>("bridge.apiKey") || ""
+	// Start the WebSocket server - get port and API key
+	// Port should match what the Go client expects (CLINE_GO_WS_PORT, default 3002)
+	const expectedPort = parseInt(process.env.CLINE_GO_WS_PORT || "3002", 10)
+	// API key should match what the Go client sends (API_AUTH_TOKEN, default standalone-token)
+	// Note: The server uses 'cline.bridge.apiKey' setting, while Go client uses API_AUTH_TOKEN env var.
+	// For consistency, let's prioritize the environment variable if available, otherwise use setting.
+	const expectedApiKey =
+		process.env.API_AUTH_TOKEN ||
+		vscode.workspace.getConfiguration("cline").get<string>("bridge.apiKey") ||
+		"standalone-token" // Default matches docker-compose
+
+	Logger.log(`Bridge: Configuring WebSocket server on port ${expectedPort} with API key "${expectedApiKey ? "***" : "none"}"`)
 
 	// Start WebSocket server and add it to context.subscriptions so it gets disposed properly
-	const wsServer = getWebSocketBridgeServer(port, apiKey)
+	// Pass the provider instance to the server factory
+	const wsServer = getWebSocketBridgeServer(provider, expectedPort, expectedApiKey) // Updated call signature
 	wsServer.start().catch((err) => {
-		Logger.log(`Failed to start WebSocket server: ${err.message}`)
+		Logger.log(`Failed to start WebSocket server on port ${expectedPort}: ${err.message}`)
 	})
 
 	// Add to subscriptions so it gets disposed when extension is deactivated
@@ -44,8 +78,7 @@ export function registerClineBridge(context: vscode.ExtensionContext, outputChan
 	})
 
 	// Register event listeners for ClineProvider state changes
-	// Get the visible provider instance
-	const provider = ClineProvider.getVisibleInstance()
+	// Use the passed provider instance directly
 	if (provider) {
 		// Cast provider to EventHandlers to access event methods if they exist
 		const providerWithEvents = provider as unknown as EventHandlers
@@ -82,8 +115,8 @@ export function registerClineBridge(context: vscode.ExtensionContext, outputChan
 			const newPort = newConfig.get<number>("bridge.port") || 9000
 			const newApiKey = newConfig.get<string>("bridge.apiKey") || ""
 
-			// Apply new settings
-			const newServer = getWebSocketBridgeServer(newPort, newApiKey)
+			// Apply new settings, passing the existing provider instance
+			const newServer = getWebSocketBridgeServer(provider, newPort, newApiKey) // Updated call signature
 			await newServer.start()
 
 			return { success: true }

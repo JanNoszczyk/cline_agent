@@ -39,7 +39,12 @@
 		"ai",
 		"llama"
 	],
-	"activationEvents": [],
+	"activationEvents": [
+		"onResolveRemote"
+	],
+	"extensionKind": [
+		"workspace"
+	],
 	"main": "./dist/extension.js",
 	"contributes": {
 		"viewsContainers": {

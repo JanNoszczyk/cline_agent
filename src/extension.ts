@@ -24,17 +24,19 @@ let outputChannel: vscode.OutputChannel
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
+	// Make activate async
 	outputChannel = vscode.window.createOutputChannel("Cline")
 	context.subscriptions.push(outputChannel)
 
 	Logger.initialize(outputChannel)
 	Logger.log("Cline extension activated")
 
-	// Register the Cline Bridge
-	registerClineBridge(context, outputChannel)
-
 	const sidebarProvider = new ClineProvider(context, outputChannel)
+
+	// Register the Cline Bridge and pass the provider instance
+	// Await the bridge registration to ensure server is ready before activation completes
+	await registerClineBridge(context, outputChannel, sidebarProvider) // Pass sidebarProvider and await
 
 	vscode.commands.executeCommand("setContext", "cline.isDevMode", IS_DEV && IS_DEV === "true")
 
