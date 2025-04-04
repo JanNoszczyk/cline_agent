@@ -456,7 +456,7 @@ export class WebSocketBridgeServer {
 			this.clients.set(ws, clientData)
 		}
 
-		Logger.log(`WebSocket: Processing local message. Received type: "${type}" (ID: ${id || "N/A"})`) // <-- Added logging
+		Logger.log(`WebSocket: Processing local message. Received type: "${type}" (ID: ${id || "N/A"})`)
 
 		try {
 			// Use the stored provider instance
@@ -475,7 +475,6 @@ export class WebSocketBridgeServer {
 						payload: {
 							timestamp: Date.now(),
 							hasProvider: !!this.provider, // Check stored provider
-							// goClientStatus: REMOVED - No longer tracking outgoing Go client
 						},
 					}
 
@@ -498,9 +497,7 @@ export class WebSocketBridgeServer {
 					this.eventSubscriptions.delete(clientData.id)
 					return { type, id, payload: { success: true } }
 
-				// --- Messages previously forwarded, now handled locally via commands ---
-				// Note: Commands still rely on ClineProvider.getVisibleInstance() internally,
-				// but the bridge itself uses this.provider where needed.
+				// --- Messages handled locally using the stored provider instance ---
 
 				case MessageType.TaskInit: {
 					if (!provider) {
@@ -509,9 +506,12 @@ export class WebSocketBridgeServer {
 					if (!payload?.task) {
 						throw new Error("Payload 'task' required for TaskInit")
 					}
-					// Command execution still uses the static getter internally
-					const taskId = await vscode.commands.executeCommand("claude.initTask", payload.task, payload.images || [])
-					return { type, id, payload: { success: true, taskId } }
+					// Directly call provider method
+					await provider.initClineWithTask(payload.task, payload.images || [])
+					// Get task ID from provider state after initialization
+					const state = await provider.getStateToPostToWebview()
+					const currentTaskId = state.currentTaskItem?.id
+					return { type, id, payload: { success: true, taskId: currentTaskId } }
 				}
 
 				case MessageType.TaskResume: {
@@ -521,8 +521,8 @@ export class WebSocketBridgeServer {
 					if (!taskId) {
 						throw new Error("taskId required for TaskResume")
 					}
-					Logger.log(`WebSocket: TaskResume command ('claude.resumeTask'?) not fully implemented yet.`)
-					// await vscode.commands.executeCommand("claude.resumeTask", taskId, payload);
+					Logger.log(`WebSocket: TaskResume direct call not fully implemented yet.`)
+					// await provider.resumeTask(taskId, payload); // Assuming resumeTask exists
 					return { type, id, payload: { success: true, message: "Resume handling pending" } }
 				}
 
@@ -530,7 +530,8 @@ export class WebSocketBridgeServer {
 					if (!provider) {
 						throw new Error("Provider required for TaskCancel")
 					}
-					await vscode.commands.executeCommand("claude.cancelTask")
+					// Directly call provider method
+					await provider.cancelTask()
 					return { type, id, payload: { success: true } }
 				}
 
@@ -541,19 +542,22 @@ export class WebSocketBridgeServer {
 					if (!payload?.response) {
 						throw new Error("Payload 'response' required for TaskResponse")
 					}
-					await vscode.commands.executeCommand(
-						"claude.handleResponse",
-						payload.response,
-						payload.text || "",
-						payload.images || [],
-					)
+					// Directly call provider method (assuming handleWebviewAskResponse exists)
+					if (provider.handleWebviewAskResponse) {
+						await provider.handleWebviewAskResponse(payload.response, payload.text || "", payload.images || [])
+					} else {
+						// Fallback or error if method doesn't exist
+						Logger.log("WebSocket: handleWebviewAskResponse method not found on provider.")
+						throw new Error("handleWebviewAskResponse method not available")
+					}
 					return { type, id, payload: { success: true } }
 				}
 				case MessageType.StateRequest: {
 					if (!provider) {
 						throw new Error("Provider required for StateRequest")
 					}
-					const state = await vscode.commands.executeCommand("claude.getState")
+					// Directly call provider method
+					const state = await provider.getStateToPostToWebview()
 					return { type, id, payload: { success: true, state } }
 				}
 				case MessageType.SettingsUpdate: {
@@ -564,9 +568,10 @@ export class WebSocketBridgeServer {
 					if (!payload) {
 						throw new Error("Payload required for SettingsUpdate")
 					}
-					Logger.log(`WebSocket: Executing claude.updateApiConfig with payload: ${JSON.stringify(payload)}`)
-					await vscode.commands.executeCommand("claude.updateApiConfig", payload)
-					Logger.log(`WebSocket: Finished claude.updateApiConfig for message ID: ${id || "N/A"}`)
+					Logger.log(`WebSocket: Calling provider.updateApiConfiguration with payload: ${JSON.stringify(payload)}`)
+					// Directly call provider method
+					await provider.updateApiConfiguration(payload)
+					Logger.log(`WebSocket: Finished provider.updateApiConfiguration for message ID: ${id || "N/A"}`)
 					return { type, id, payload: { success: true } }
 				}
 
@@ -577,7 +582,8 @@ export class WebSocketBridgeServer {
 					if (!payload) {
 						throw new Error("Payload required for ChatModeUpdate")
 					}
-					await vscode.commands.executeCommand("claude.toggleMode", payload)
+					// Directly call provider method
+					await provider.togglePlanActModeWithChatSettings(payload)
 					return { type, id, payload: { success: true } }
 				}
 
@@ -588,8 +594,8 @@ export class WebSocketBridgeServer {
 					if (!payload?.token) {
 						throw new Error("Payload 'token' required for AuthToken")
 					}
-					Logger.log(`WebSocket: AuthToken command ('claude.setAuthToken'?) not fully implemented yet.`)
-					// await vscode.commands.executeCommand("claude.setAuthToken", payload.token);
+					Logger.log(`WebSocket: AuthToken direct call not fully implemented yet.`)
+					// await provider.setAuthToken(payload.token); // Assuming setAuthToken exists
 					return { type, id, payload: { success: true, message: "AuthToken handling pending" } }
 				}
 
@@ -600,8 +606,8 @@ export class WebSocketBridgeServer {
 					if (!payload?.user) {
 						throw new Error("Payload 'user' required for AuthUser")
 					}
-					Logger.log(`WebSocket: AuthUser command ('claude.setAuthUser'?) not fully implemented yet.`)
-					// await vscode.commands.executeCommand("claude.setAuthUser", payload.user);
+					Logger.log(`WebSocket: AuthUser direct call not fully implemented yet.`)
+					// await provider.setAuthUser(payload.user); // Assuming setAuthUser exists
 					return { type, id, payload: { success: true, message: "AuthUser handling pending" } }
 				}
 
@@ -609,8 +615,8 @@ export class WebSocketBridgeServer {
 					if (!provider) {
 						throw new Error("Provider required for AuthSignout")
 					}
-					Logger.log(`WebSocket: AuthSignout command ('claude.signOut'?) not fully implemented yet.`)
-					// await vscode.commands.executeCommand("claude.signOut");
+					Logger.log(`WebSocket: AuthSignout direct call not fully implemented yet.`)
+					// await provider.signOut(); // Assuming signOut exists
 					return { type, id, payload: { success: true, message: "AuthSignout handling pending" } }
 				}
 
@@ -621,17 +627,19 @@ export class WebSocketBridgeServer {
 					if (!payload) {
 						throw new Error("Payload required for McpRequest")
 					}
-					Logger.log(`WebSocket: McpRequest command ('claude.handleMcpRequest'?) not fully implemented yet.`)
-					// const mcpResponse = await vscode.commands.executeCommand("claude.handleMcpRequest", payload);
+					Logger.log(`WebSocket: McpRequest direct call not fully implemented yet.`)
+					// const mcpResponse = await provider.handleMcpRequest(payload); // Assuming handleMcpRequest exists
 					// return { type, id, payload: { success: true, response: mcpResponse } };
 					return { type, id, payload: { success: true, message: "McpRequest handling pending" } }
 				}
 
+				// --- VS Code API Interactions (Keep using commands) ---
 				case MessageType.FileOpen: {
 					if (!payload?.filePath) {
 						throw new Error("Payload 'filePath' required for FileOpen")
 					}
-					await vscode.commands.executeCommand("claude.openFile", payload.filePath)
+					// Use VS Code command for this
+					await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(payload.filePath))
 					return { type, id, payload: { success: true } }
 				}
 
@@ -639,94 +647,110 @@ export class WebSocketBridgeServer {
 					if (!payload?.imagePath) {
 						throw new Error("Payload 'imagePath' required for ImageOpen")
 					}
-					await vscode.commands.executeCommand("claude.openImage", payload.imagePath)
+					// Use VS Code command for this
+					await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(payload.imagePath))
 					return { type, id, payload: { success: true } }
 				}
 
+				// --- Provider Interactions (Use direct calls) ---
 				case MessageType.MentionOpen: {
 					if (!provider) {
-						// Need provider for this command
 						throw new Error("Provider required for MentionOpen")
 					}
 					if (!payload?.mention) {
 						throw new Error("Payload 'mention' required for MentionOpen")
 					}
-					await vscode.commands.executeCommand("claude.openMention", payload.mention)
+					// Directly call provider method (assuming openMention exists)
+					if ((provider as any).openMention) {
+						await (provider as any).openMention(payload.mention)
+					} else {
+						Logger.log("WebSocket: openMention method not found on provider.")
+						throw new Error("openMention method not available")
+					}
 					return { type, id, payload: { success: true } }
 				}
 
 				case MessageType.ImagesSelected: {
 					if (!provider) {
-						// Need provider for this command
 						throw new Error("Provider required for ImagesSelected")
 					}
-					const selectedImages = await vscode.commands.executeCommand("claude.selectImages")
+					// Directly call provider method (assuming selectImages exists)
+					let selectedImages: any[] = []
+					if ((provider as any).selectImages) {
+						selectedImages = await (provider as any).selectImages()
+					} else {
+						Logger.log("WebSocket: selectImages method not found on provider.")
+						throw new Error("selectImages method not available")
+					}
 					return { type, id, payload: { success: true, images: selectedImages } }
 				}
 
 				case MessageType.CheckpointDiff: {
 					if (!provider) {
-						// Need provider for this command
 						throw new Error("Provider required for CheckpointDiff")
 					}
-					if (!taskId) {
-						throw new Error("taskId required for CheckpointDiff")
-					}
+					// taskId might be needed if the provider method requires it explicitly,
+					// otherwise, assume the provider knows the current task context.
 					if (payload?.messageTs === undefined) {
 						throw new Error("Payload 'messageTs' required for CheckpointDiff")
 					}
-					await vscode.commands.executeCommand(
-						"claude.checkpointDiff",
-						taskId,
-						payload.messageTs,
-						payload.seeNewChangesSinceLastTaskCompletion || false,
-					)
+					// Directly call provider method (assuming presentMultifileDiff exists)
+					if ((provider as any).presentMultifileDiff) {
+						await (provider as any).presentMultifileDiff(
+							payload.messageTs,
+							payload.seeNewChangesSinceLastTaskCompletion || false,
+						)
+					} else {
+						Logger.log("WebSocket: presentMultifileDiff method not found on provider.")
+						throw new Error("presentMultifileDiff method not available")
+					}
 					return { type, id, payload: { success: true } }
 				}
 				case MessageType.CheckpointRestore: {
 					if (!provider) {
-						// Need provider for this command
 						throw new Error("Provider required for CheckpointRestore")
 					}
-					if (!taskId) {
-						throw new Error("taskId required for CheckpointRestore")
-					}
+					// taskId might be needed explicitly. Assume provider context for now.
 					if (payload?.messageTs === undefined) {
 						throw new Error("Payload 'messageTs' required for CheckpointRestore")
 					}
 					if (!payload?.restoreType) {
 						throw new Error("Payload 'restoreType' required for CheckpointRestore")
 					}
-					await vscode.commands.executeCommand(
-						"claude.checkpointRestore",
-						taskId,
-						payload.messageTs,
-						payload.restoreType,
-					)
+					// Directly call provider method (assuming restoreCheckpoint exists)
+					if ((provider as any).restoreCheckpoint) {
+						await (provider as any).restoreCheckpoint(payload.messageTs, payload.restoreType)
+					} else {
+						Logger.log("WebSocket: restoreCheckpoint method not found on provider.")
+						throw new Error("restoreCheckpoint method not available")
+					}
 					return { type, id, payload: { success: true } }
 				}
 				case MessageType.CheckLatestChanges: {
 					if (!provider) {
-						// Need provider for this command
 						throw new Error("Provider required for CheckLatestChanges")
 					}
-					if (!taskId) {
-						throw new Error("taskId required for CheckLatestChanges")
+					// taskId might be needed explicitly. Assume provider context for now.
+					let hasChanges = false
+					// Directly call provider method (assuming doesLatestTaskCompletionHaveNewChanges exists)
+					if ((provider as any).doesLatestTaskCompletionHaveNewChanges) {
+						hasChanges = await (provider as any).doesLatestTaskCompletionHaveNewChanges()
+					} else {
+						Logger.log("WebSocket: doesLatestTaskCompletionHaveNewChanges method not found on provider.")
+						throw new Error("doesLatestTaskCompletionHaveNewChanges method not available")
 					}
-					const hasChanges = await vscode.commands.executeCommand("claude.checkLatestTaskCompletionChanges", taskId)
 					return { type, id, payload: { success: true, hasChanges } }
 				}
 
 				case MessageType.Subscribe: {
 					if (!provider) {
-						// Need provider for this command
 						throw new Error("Provider required for Subscribe")
 					}
 					if (!payload?.email) {
 						throw new Error("Payload 'email' required for Subscribe")
 					}
-					Logger.log(`WebSocket: Subscribe command ('claude.subscribeEmail'?) not fully implemented yet.`)
-					// await vscode.commands.executeCommand("claude.subscribeEmail", payload.email);
+					Logger.log(`WebSocket: Subscribe direct call not fully implemented yet.`)
+					// await provider.subscribeEmail(payload.email); // Assuming subscribeEmail exists
 					return { type, id, payload: { success: true, message: "Subscribe handling pending" } }
 				}
 
@@ -735,15 +759,11 @@ export class WebSocketBridgeServer {
 					if (!provider) {
 						throw new Error("ClineProvider not available for WebviewMessage")
 					}
-					// Example: Forward message directly to the webview
+					// Forward message directly to the webview via provider
 					await provider.postMessageToWebview(payload) // Assuming payload is the message for webview
 					return { type, id, payload: { success: true } }
 
-				// Add other message types handled *locally* by the bridge here
-				// ...
-
 				default:
-					// This case should ideally not be reached if isMessageForGoServer is correct
 					throw new Error(`Unknown or unhandled local message type: ${type}`)
 			}
 		} catch (error) {

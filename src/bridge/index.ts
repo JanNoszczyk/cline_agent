@@ -64,9 +64,16 @@ export async function registerClineBridge(
 	// Start WebSocket server and add it to context.subscriptions so it gets disposed properly
 	// Pass the provider instance to the server factory
 	const wsServer = getWebSocketBridgeServer(provider, expectedPort, expectedApiKey) // Updated call signature
-	wsServer.start().catch((err) => {
-		Logger.log(`Failed to start WebSocket server on port ${expectedPort}: ${err.message}`)
-	})
+	// Await the server start to ensure it's ready before activation completes
+	try {
+		await wsServer.start() // <-- Added await
+	} catch (err) {
+		Logger.log(
+			`Failed to start WebSocket server on port ${expectedPort}: ${err instanceof Error ? err.message : String(err)}`,
+		)
+		// Optionally re-throw or handle the error more gracefully if startup failure is critical
+		// For now, we log and continue, but the bridge might not be functional.
+	}
 
 	// Add to subscriptions so it gets disposed when extension is deactivated
 	context.subscriptions.push({
