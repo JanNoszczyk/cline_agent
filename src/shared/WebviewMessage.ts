@@ -78,6 +78,7 @@ export interface WebviewMessage {
 		| "scrollToSettings"
 		| "getRelativePaths" // Handles single and multiple URI resolution
 		| "searchFiles"
+		| "subscribeEmail" // Added for email subscription
 	// | "relaunchChromeDebugMode"
 	text?: string
 	uris?: string[] // Used for getRelativePaths

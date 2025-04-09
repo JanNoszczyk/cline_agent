@@ -10,6 +10,7 @@ import assert from "node:assert"
 import { telemetryService } from "./services/telemetry/TelemetryService"
 import { WebviewProvider } from "./core/webview"
 import { createTestServer, shutdownTestServer } from "./services/test/TestServer"
+import { registerClineBridge } from "./bridge" // Import the bridge registration function
 
 /*
 Built using https://github.com/microsoft/vscode-webview-ui-toolkit
@@ -328,6 +329,11 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 		}),
 	)
+
+	// Register the Cline Bridge
+	registerClineBridge(context, outputChannel, sidebarWebview).catch((error) => {
+		Logger.log(`Failed to register Cline Bridge: ${error}`)
+	})
 
 	// Register code action provider
 	context.subscriptions.push(

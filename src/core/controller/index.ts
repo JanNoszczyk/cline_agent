@@ -1,4 +1,4 @@
-import { Anthropic } from "@anthropic-ai/sdk"
+import { Anthropic } from "@anthropic-ai/sdk" // Corrected: Import only Anthropic
 import axios from "axios"
 import crypto from "crypto"
 import { execa } from "execa"
@@ -21,7 +21,7 @@ import { McpHub } from "../../services/mcp/McpHub"
 import { telemetryService } from "../../services/telemetry/TelemetryService"
 import { ApiProvider, ModelInfo } from "../../shared/api"
 import { findLast } from "../../shared/array"
-import { ChatContent } from "../../shared/ChatContent"
+import { ChatContent } from "../../shared/ChatContent" // Removed incorrect comment
 import { ChatSettings } from "../../shared/ChatSettings"
 import { ExtensionMessage, ExtensionState, Invoke, Platform } from "../../shared/ExtensionMessage"
 import { HistoryItem } from "../../shared/HistoryItem"
@@ -48,6 +48,8 @@ import { GlobalFileNames } from "../storage/disk"
 import { discoverChromeInstances } from "../../services/browser/BrowserDiscovery"
 import { searchWorkspaceFiles } from "../../services/search/file-search"
 import { getWorkspacePath } from "../../utils/path"
+import { Logger } from "../../services/logging/Logger" // Import Logger
+import { MessageType } from "../../bridge/websocket-server" // Corrected Import Path
 
 /*
 https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default/weather-webview/src/providers/WeatherViewProvider.ts
@@ -56,17 +58,17 @@ https://github.com/KumarVariable/vscode-extension-sidebar-html/blob/master/src/c
 */
 
 export class Controller {
-	private disposables: vscode.Disposable[] = []
-	private task?: Task
+	public disposables: vscode.Disposable[] = [] // Changed to public
+	public task?: Task // Changed visibility to public
 	workspaceTracker?: WorkspaceTracker
 	mcpHub?: McpHub
 	accountService?: ClineAccountService
-	private latestAnnouncementId = "april-7-2025" // update to some unique identifier when we add a new announcement
-	private webviewProviderRef: WeakRef<WebviewProvider>
+	public latestAnnouncementId = "april-7-2025" // Changed to public
+	public webviewProviderRef: WeakRef<WebviewProvider> // Changed to public
 
 	constructor(
 		readonly context: vscode.ExtensionContext,
-		private readonly outputChannel: vscode.OutputChannel,
+		public readonly outputChannel: vscode.OutputChannel, // Changed to public
 		webviewProvider: WebviewProvider,
 	) {
 		this.outputChannel.appendLine("ClineProvider instantiated")
@@ -889,6 +891,18 @@ export class Controller {
 				}
 				break
 			}
+			case "subscribeEmail": {
+				// TODO: Implement email subscription logic using accountService
+				console.log("Received subscribeEmail request:", message.text)
+				// Example: await this.accountService?.subscribeToNewsletter(message.text);
+				// Need to decide how to handle response/confirmation to webview
+				break
+			}
+
+			// Removed the "userMessage" case block that was here
+
+			// Removed the "stateRequest" case block that was here
+
 			// Add more switch case statements here as more webview message commands
 			// are created within the webview context (i.e. inside media/main.js)
 		}
@@ -1127,7 +1141,8 @@ export class Controller {
 
 	// VSCode LM API
 
-	private async getVsCodeLmModels() {
+	public async getVsCodeLmModels() {
+		// Changed to public
 		try {
 			const models = await vscode.lm.selectChatModels({})
 			return models || []
@@ -1238,7 +1253,8 @@ export class Controller {
 
 	// MCP Marketplace
 
-	private async fetchMcpMarketplaceFromApi(silent: boolean = false): Promise<McpMarketplaceCatalog | undefined> {
+	public async fetchMcpMarketplaceFromApi(silent: boolean = false): Promise<McpMarketplaceCatalog | undefined> {
+		// Changed to public
 		try {
 			const response = await axios.get("https://api.cline.bot/v1/mcp/marketplace", {
 				headers: {
@@ -1290,7 +1306,8 @@ export class Controller {
 		}
 	}
 
-	private async fetchMcpMarketplace(forceRefresh: boolean = false) {
+	public async fetchMcpMarketplace(forceRefresh: boolean = false) {
+		// Changed to public
 		try {
 			// Check if we have cached data
 			const cachedCatalog = (await getGlobalState(this.context, "mcpMarketplaceCatalog")) as
@@ -1322,7 +1339,8 @@ export class Controller {
 		}
 	}
 
-	private async downloadMcp(mcpId: string) {
+	public async downloadMcp(mcpId: string) {
+		// Changed to public
 		try {
 			// First check if we already have this MCP server installed
 			const servers = this.mcpHub?.getServers() || []
@@ -1461,7 +1479,8 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 		// await this.postMessageToWebview({ type: "action", action: "settingsButtonClicked" }) // bad ux if user is on welcome
 	}
 
-	private async ensureCacheDirectoryExists(): Promise<string> {
+	public async ensureCacheDirectoryExists(): Promise<string> {
+		// Changed to public
 		const cacheDir = path.join(this.context.globalStorageUri.fsPath, "cache")
 		await fs.mkdir(cacheDir, { recursive: true })
 		return cacheDir
@@ -1491,7 +1510,7 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 				"description": "Claude 3.5 Sonnet delivers better-than-Opus capabilities, faster-than-Sonnet speeds, at the same Sonnet prices. Sonnet is particularly good at:\n\n- Coding: Autonomously writes, edits, and runs code with reasoning and troubleshooting\n- Data science: Augments human data science expertise; navigates unstructured data while using multiple tools for insights\n- Visual processing: excelling at interpreting charts, graphs, and images, accurately transcribing text to derive insights beyond just the text alone\n- Agentic tasks: exceptional tool use, making it great at agentic tasks (i.e. complex, multi-step problem solving tasks that require engaging with other systems)\n\n#multimodal",
 				"context_length": 200000,
 				"architecture": {
-					"modality": "text+image-\u003Etext",
+					"modality": "text+image->text",
 					"tokenizer": "Claude",
 					"instruct_type": null
 				},
@@ -1704,7 +1723,7 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 		taskDirPath: string
 		apiConversationHistoryFilePath: string
 		uiMessagesFilePath: string
-		apiConversationHistory: Anthropic.MessageParam[]
+		apiConversationHistory: Anthropic.MessageParam[] // Use Anthropic type directly
 	}> {
 		const history = ((await getGlobalState(this.context, "taskHistory")) as HistoryItem[] | undefined) || []
 		const historyItem = history.find((item) => item.id === id)
@@ -1935,7 +1954,7 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 		return history
 	}
 
-	// private async clearState() {
+	// public async clearState() { // Changed to public - But should this be public?
 	// 	this.context.workspaceState.keys().forEach((key) => {
 	// 		this.context.workspaceState.update(key, undefined)
 	// 	})

@@ -12,6 +12,7 @@ import { fileExistsAtPath } from "../../utils/fs"
 import { BrowserActionResult } from "../../shared/ExtensionMessage"
 import { BrowserSettings } from "../../shared/BrowserSettings"
 import { discoverChromeInstances, testBrowserConnection, isPortOpen } from "./BrowserDiscovery"
+// @ts-ignore - No types available for chrome-launcher
 import * as chromeLauncher from "chrome-launcher"
 import { Controller } from "../../core/controller"
 import { telemetryService } from "../../services/telemetry/TelemetryService"

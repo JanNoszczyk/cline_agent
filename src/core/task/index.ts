@@ -67,6 +67,7 @@ import { formatResponse } from ".././prompts/responses"
 import { addUserInstructions, SYSTEM_PROMPT } from ".././prompts/system"
 import { FileContextTracker } from "../context-tracking/FileContextTracker"
 import { ModelContextTracker } from "../context-tracking/ModelContextTracker"
+import { Logger } from "../../services/logging/Logger" // Added Logger import
 
 import {
 	checkIsAnthropicContextWindowError,
@@ -86,49 +87,51 @@ import {
 const cwd = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).at(0) ?? path.join(os.homedir(), "Desktop") // may or may not exist but fs checking existence would immediately ask for permission which would be bad UX, need to come up with a better solution
 
 type ToolResponse = string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>
-type UserContent = Array<Anthropic.ContentBlockParam>
+// Export UserContent type definition
+export type UserContent = Array<Anthropic.ContentBlockParam | Anthropic.ImageBlockParam>
 
 export class Task {
-	readonly taskId: string
-	readonly apiProvider?: string
-	api: ApiHandler
+	// Make taskId public
+	public readonly taskId: string
+	public readonly apiProvider?: string
+	public api: ApiHandler // Make public
 	private terminalManager: TerminalManager
 	private urlContentFetcher: UrlContentFetcher
-	browserSession: BrowserSession
-	contextManager: ContextManager
-	private didEditFile: boolean = false
-	customInstructions?: string
-	autoApprovalSettings: AutoApprovalSettings
-	browserSettings: BrowserSettings
-	chatSettings: ChatSettings
-	apiConversationHistory: Anthropic.MessageParam[] = []
-	clineMessages: ClineMessage[] = []
+	public browserSession: BrowserSession // Make public
+	public contextManager: ContextManager // Make public
+	private didEditFile: boolean = false // Keep private
+	public customInstructions?: string // Make public
+	public autoApprovalSettings: AutoApprovalSettings // Make public
+	public browserSettings: BrowserSettings // Make public
+	public chatSettings: ChatSettings // Make public
+	public apiConversationHistory: Anthropic.MessageParam[] = [] // Make public
+	public clineMessages: ClineMessage[] = [] // Make public
 	private clineIgnoreController: ClineIgnoreController
 	private askResponse?: ClineAskResponse
 	private askResponseText?: string
 	private askResponseImages?: string[]
 	private lastMessageTs?: number
 	private consecutiveAutoApprovedRequestsCount: number = 0
-	private consecutiveMistakeCount: number = 0
-	private controllerRef: WeakRef<Controller>
-	private abort: boolean = false
-	didFinishAbortingStream = false
-	abandoned = false
+	public consecutiveMistakeCount: number = 0 // Make public
+	public controllerRef: WeakRef<Controller> // Make public
+	public abort: boolean = false // Make public
+	public didFinishAbortingStream = false // Make public
+	public abandoned = false // Make public
 	private diffViewProvider: DiffViewProvider
 	private checkpointTracker?: CheckpointTracker
-	checkpointTrackerErrorMessage?: string
-	conversationHistoryDeletedRange?: [number, number]
-	isInitialized = false
-	isAwaitingPlanResponse = false
-	didRespondToPlanAskBySwitchingMode = false
+	public checkpointTrackerErrorMessage?: string // Make public
+	public conversationHistoryDeletedRange?: [number, number] // Make public
+	public isInitialized = false // Make public
+	public isAwaitingPlanResponse = false // Make public
+	public didRespondToPlanAskBySwitchingMode = false // Make public
 
 	// Metadata tracking
 	private fileContextTracker: FileContextTracker
 	private modelContextTracker: ModelContextTracker
 
 	// streaming
-	isWaitingForFirstChunk = false
-	isStreaming = false
+	public isWaitingForFirstChunk = false // Make public
+	public isStreaming = false // Make public
 	private currentStreamingContentIndex = 0
 	private assistantMessageContent: AssistantMessageContent[] = []
 	private presentAssistantMessageLocked = false
@@ -707,7 +710,8 @@ export class Task {
 		this.askResponseImages = images
 	}
 
-	async say(type: ClineSay, text?: string, images?: string[], partial?: boolean): Promise<undefined> {
+	// Make say public
+	public async say(type: ClineSay, text?: string, images?: string[], partial?: boolean): Promise<undefined> {
 		if (this.abort) {
 			throw new Error("Cline instance aborted")
 		}
@@ -3082,7 +3086,8 @@ export class Task {
 		}
 	}
 
-	async recursivelyMakeClineRequests(userContent: UserContent, includeFileDetails: boolean = false): Promise<boolean> {
+	// Make recursivelyMakeClineRequests public
+	public async recursivelyMakeClineRequests(userContent: UserContent, includeFileDetails: boolean = false): Promise<boolean> {
 		if (this.abort) {
 			throw new Error("Cline instance aborted")
 		}
@@ -3397,7 +3402,7 @@ export class Task {
 			this.didCompleteReadingStream = true
 
 			// set any blocks to be complete to allow presentAssistantMessage to finish and set userMessageContentReady to true
-			// (could be a text block that had no subsequent tool uses, or a text block at the very end, or an invalid tool use, etc. whatever the case, presentAssistantMessage relies on these blocks either to be completed or the user to reject a block in order to proceed and eventually set userMessageContentReady to true)
+			// (could be a partial text block that had no subsequent tool uses, or a text block at the very end, or an invalid tool use, etc. whatever the case, presentAssistantMessage relies on these blocks either to be completed or the user to reject a block in order to proceed and eventually set userMessageContentReady to true)
 			const partialBlocks = this.assistantMessageContent.filter((block) => block.partial)
 			partialBlocks.forEach((block) => {
 				block.partial = false
@@ -3468,7 +3473,7 @@ export class Task {
 			// this should never happen since the only thing that can throw an error is the attemptApiRequest, which is wrapped in a try catch that sends an ask where if noButtonClicked, will clear current task and destroy this instance. However to avoid unhandled promise rejection, we will end this loop which will end execution of this instance (see startTask)
 			return true // needs to be true so parent loop knows to end task
 		}
-	}
+	} // <<< END OF recursivelyMakeClineRequests METHOD
 
 	async loadContext(userContent: UserContent, includeFileDetails: boolean = false) {
 		return await Promise.all([
