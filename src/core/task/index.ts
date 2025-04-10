@@ -124,6 +124,8 @@ export class Task {
 	public isInitialized = false // Make public
 	public isAwaitingPlanResponse = false // Make public
 	public didRespondToPlanAskBySwitchingMode = false // Make public
+	private isAwaitingAskResponse = false // Flag to indicate if an ask() is pending
+	private queuedUserInput: UserContent | null = null // Queue for user input received during ask()
 
 	// Metadata tracking
 	private fileContextTracker: FileContextTracker
@@ -613,14 +615,20 @@ export class Task {
 						type: "partialMessage",
 						partialMessage: lastMessage,
 					})
-					throw new Error("Current ask promise was ignored 1")
+					askTs = lastMessage.ts // Assign askTs here for existing partial messages
+					// Do not set isAwaitingAskResponse for partial updates
+					// throw new Error("Current ask promise was ignored 1")
+					// Still need to signal interruption if a *new* message comes during partial streaming
+					// but pWaitFor handles this via lastMessageTs check below.
+					// If another ask starts while this partial is streaming, the new ask will update lastMessageTs
+					// causing the original pWaitFor to throw the ignore error.
 				} else {
 					// this is a new partial message, so add it with partial state
-					// this.askResponse = undefined
-					// this.askResponseText = undefined
-					// this.askResponseImages = undefined
+					this.askResponse = undefined
+					this.askResponseText = undefined
+					this.askResponseImages = undefined
 					askTs = Date.now()
-					this.lastMessageTs = askTs
+					this.lastMessageTs = askTs // Set timestamp for this new ask
 					await this.addToClineMessages({
 						ts: askTs,
 						type: "ask",
@@ -629,7 +637,8 @@ export class Task {
 						partial,
 					})
 					await this.controllerRef.deref()?.postStateToWebview()
-					throw new Error("Current ask promise was ignored 2")
+					// Don't throw error here, let pWaitFor handle interruption
+					// throw new Error("Current ask promise was ignored 2")
 				}
 			} else {
 				// partial=false means its a complete version of a previously partial message
@@ -638,6 +647,7 @@ export class Task {
 					this.askResponse = undefined
 					this.askResponseText = undefined
 					this.askResponseImages = undefined
+					// Set timestamp based on the original partial message
 
 					/*
 					Bug for the history books:
@@ -689,19 +699,24 @@ export class Task {
 			await this.controllerRef.deref()?.postStateToWebview()
 		}
 
-		await pWaitFor(() => this.askResponse !== undefined || this.lastMessageTs !== askTs, { interval: 100 })
-		if (this.lastMessageTs !== askTs) {
-			throw new Error("Current ask promise was ignored") // could happen if we send multiple asks in a row i.e. with command_output. It's important that when we know an ask could fail, it is handled gracefully
+		this.isAwaitingAskResponse = true // Set flag before waiting
+		try {
+			await pWaitFor(() => this.askResponse !== undefined || this.lastMessageTs !== askTs, { interval: 100 })
+			if (this.lastMessageTs !== askTs) {
+				throw new Error("Current ask promise was ignored") // could happen if we send multiple asks in a row i.e. with command_output. It's important that when we know an ask could fail, it is handled gracefully
+			}
+			const result = {
+				response: this.askResponse!,
+				text: this.askResponseText,
+				images: this.askResponseImages,
+			}
+			this.askResponse = undefined
+			this.askResponseText = undefined
+			this.askResponseImages = undefined
+			return result
+		} finally {
+			this.isAwaitingAskResponse = false // Clear flag after waiting finishes
 		}
-		const result = {
-			response: this.askResponse!,
-			text: this.askResponseText,
-			images: this.askResponseImages,
-		}
-		this.askResponse = undefined
-		this.askResponseText = undefined
-		this.askResponseImages = undefined
-		return result
 	}
 
 	async handleWebviewAskResponse(askResponse: ClineAskResponse, text?: string, images?: string[]) {
@@ -806,6 +821,42 @@ export class Task {
 			this.clineMessages.pop()
 			await this.saveClineMessagesAndUpdateHistory()
 			await this.controllerRef.deref()?.postStateToWebview()
+		}
+	}
+
+	// Method to handle new user input and restart the processing loop
+	// NOTE: Added for WebSocket Bridge input queueing
+	public async processNewUserInput(newUserContent: UserContent) {
+		if (this.abort) {
+			Logger.log(`Task ${this.taskId}: processNewUserInput called, but task is aborted. Ignoring.`)
+			return
+		}
+		if (!this.isInitialized) {
+			Logger.log(`Task ${this.taskId}: processNewUserInput called, but task not initialized. Waiting.`)
+			await pWaitFor(() => this.isInitialized === true, { timeout: 3000 }).catch(() => {
+				Logger.log(`Task ${this.taskId}: Timeout waiting for task initialization in processNewUserInput.`)
+			})
+		}
+
+		// If we are currently waiting for an ask response, queue the input
+		if (this.isAwaitingAskResponse) {
+			Logger.log(`Task ${this.taskId}: Ask is pending, queuing new user input.`)
+			this.queuedUserInput = newUserContent
+			return
+		}
+
+		// If not waiting, process the input immediately
+		Logger.log(`Task ${this.taskId}: No ask pending, processing new user input immediately.`)
+		try {
+			// Pass false for includeFileDetails as this isn't the initial task request
+			const didEndLoop = await this.recursivelyMakeClineRequests(newUserContent, false)
+			if (didEndLoop) {
+				Logger.log(`Task ${this.taskId}: Loop ended after processing new user input.`)
+			}
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error)
+			Logger.log(`Task ${this.taskId}: Error during recursivelyMakeClineRequests after new user input: ${errorMessage}`)
+			await this.say("error", `Failed to process user message: ${errorMessage}`)
 		}
 	}
 
@@ -3088,6 +3139,16 @@ export class Task {
 
 	// Make recursivelyMakeClineRequests public
 	public async recursivelyMakeClineRequests(userContent: UserContent, includeFileDetails: boolean = false): Promise<boolean> {
+		// Check for and process queued user input first
+		if (this.queuedUserInput) {
+			Logger.log(`Task ${this.taskId}: Processing queued user input.`)
+			const queuedInput = this.queuedUserInput
+			this.queuedUserInput = null // Clear the queue
+			// Call recursivelyMakeClineRequests with the queued input
+			// Pass false for includeFileDetails as this isn't the initial request
+			return this.recursivelyMakeClineRequests(queuedInput, false)
+		}
+
 		if (this.abort) {
 			throw new Error("Cline instance aborted")
 		}

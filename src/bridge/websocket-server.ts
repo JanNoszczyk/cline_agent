@@ -7,7 +7,7 @@ import { Controller } from "../core/controller" // Import Controller
 import { WebviewProvider } from "../core/webview" // Import WebviewProvider
 import { Logger } from "../services/logging/Logger"
 import pWaitFor from "p-wait-for" // Add import
-import { processNewUserInput } from "./user_input_handler" // Import the handler
+// import { processNewUserInput } from "./user_input_handler" // REMOVED - Logic moved to Task class
 // Import necessary types if not implicitly available via Controller/WebviewProvider
 // import { HistoryItem } from "../shared/HistoryItem";
 // import { ApiConfiguration } from "../shared/api";
@@ -642,10 +642,10 @@ export class WebSocketBridgeServer {
 						})
 					}
 
-					// Call the dedicated handler
-					Logger.log(`WebSocket: Calling processNewUserInput for UserMessage (ID: ${id || "N/A"})`)
-					await processNewUserInput(controller.task, userContent) // Pass the task instance and formatted content
-					Logger.log(`WebSocket: Finished processNewUserInput for UserMessage (ID: ${id || "N/A"})`)
+					// Call the Task's queue-aware input handler
+					Logger.log(`WebSocket: Calling Task.processNewUserInput for UserMessage (ID: ${id || "N/A"})`)
+					await controller.task.processNewUserInput(userContent) // Use the Task instance's method
+					Logger.log(`WebSocket: Finished Task.processNewUserInput for UserMessage (ID: ${id || "N/A"})`)
 
 					return { type, id, payload: { success: true, message: "User message received and processing initiated" } }
 				}
