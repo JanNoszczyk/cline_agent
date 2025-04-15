@@ -2,6 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import { setTimeout as setTimeoutPromise } from "node:timers/promises"
 import * as vscode from "vscode"
+import { EventEmitter } from "events" // 1. Import EventEmitter
 import { Logger } from "./services/logging/Logger"
 import { createClineAPI } from "./exports"
 import "./utils/path" // necessary to have access to String.prototype.toPosix
@@ -11,6 +12,9 @@ import { telemetryService } from "./services/telemetry/TelemetryService"
 import { WebviewProvider } from "./core/webview"
 import { createTestServer, shutdownTestServer } from "./services/test/TestServer"
 import { ErrorService } from "./services/error/ErrorService"
+import { startGrpcServer, stopGrpcServer } from "./services/grpc/grpcServer"
+import { ClineControllerHandler } from "./services/grpc/handler" // 2. Import ClineControllerHandler
+import * as grpc from "@grpc/grpc-js"
 
 /*
 Built using https://github.com/microsoft/vscode-webview-ui-toolkit
@@ -22,6 +26,8 @@ https://github.com/microsoft/vscode-webview-ui-toolkit-samples/tree/main/framewo
 */
 
 let outputChannel: vscode.OutputChannel
+let grpcServerInstance: grpc.Server | null = null
+let grpcHandlerInstance: ClineControllerHandler | null = null // Store handler instance
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -33,7 +39,35 @@ export function activate(context: vscode.ExtensionContext) {
 	Logger.initialize(outputChannel)
 	Logger.log("Cline extension activated")
 
-	const sidebarWebview = new WebviewProvider(context, outputChannel)
+	// 4a. Create shared EventEmitter
+	const sharedEventEmitter = new EventEmitter()
+
+	// 4b. Pass emitter to WebviewProvider
+	const sidebarWebview = new WebviewProvider(context, outputChannel, sharedEventEmitter)
+
+	// Start the gRPC server
+	// Assuming the controller is accessible immediately or shortly after WebviewProvider instantiation
+	if (sidebarWebview.controller) {
+		try {
+			// 4c. Instantiate ClineControllerHandler with controller and emitter
+			grpcHandlerInstance = new ClineControllerHandler(sidebarWebview.controller, sharedEventEmitter)
+			// 4d. Pass the handler to startGrpcServer
+			// TODO: Make port configurable
+			grpcServerInstance = startGrpcServer(grpcHandlerInstance)
+			Logger.info("gRPC server started.")
+		} catch (error) {
+			Logger.error(
+				`Failed to start gRPC server: ${error instanceof Error ? error.message : String(error)}`,
+				error instanceof Error ? error : undefined,
+			)
+			grpcHandlerInstance = null // Ensure handler is null if server fails
+		}
+	} else {
+		// This might happen if the controller initialization is asynchronous
+		// Need a more robust way to get the controller instance if it's not immediate
+		Logger.error("Controller instance not available immediately to start gRPC server.")
+		// Consider if there's a scenario where this could actually happen and how to handle it
+	}
 
 	vscode.commands.executeCommand("setContext", "cline.isDevMode", IS_DEV && IS_DEV === "true")
 	vscode.commands.executeCommand("setContext", "cline.isTestMode", IS_TEST && IS_TEST === "true")
@@ -81,10 +115,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const openClineInNewTab = async () => {
 		Logger.log("Opening Cline in new tab")
-		// (this example uses webviewProvider activation event which is necessary to deserialize cached webview, but since we use retainContextWhenHidden, we don't need to use that event)
-		// https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts
-		const tabWebview = new WebviewProvider(context, outputChannel)
-		//const column = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : undefined
+		// Pass emitter to new WebviewProvider instance for the tab
+		const tabWebview = new WebviewProvider(context, outputChannel, sharedEventEmitter)
 		const lastCol = Math.max(...vscode.window.visibleTextEditors.map((editor) => editor.viewColumn || 0))
 
 		// Check if there are any visible text editors, otherwise open a new group to the right
@@ -415,6 +447,23 @@ const { IS_DEV, DEV_WORKSPACE_FOLDER, IS_TEST } = process.env
 
 // This method is called when your extension is deactivated
 export function deactivate() {
+	// Dispose the handler (which should stop listening to the emitter)
+	if (grpcHandlerInstance) {
+		grpcHandlerInstance.dispose()
+		grpcHandlerInstance = null
+		Logger.info("gRPC handler disposed during deactivation.")
+	}
+
+	// Stop the gRPC server
+	if (grpcServerInstance) {
+		stopGrpcServer(() => {
+			Logger.info("gRPC server stopped during deactivation.")
+			grpcServerInstance = null // Clear the instance reference
+		})
+	} else {
+		Logger.warn("gRPC server instance not found during deactivation.")
+	}
+
 	// Shutdown the test server if it exists
 	shutdownTestServer()
 

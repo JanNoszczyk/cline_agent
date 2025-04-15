@@ -50,6 +50,7 @@ import {
 	ExtensionMessage,
 } from "../../shared/ExtensionMessage"
 import { getApiMetrics } from "../../shared/getApiMetrics"
+import { EventEmitter } from "events" // Import EventEmitter
 import { HistoryItem } from "../../shared/HistoryItem"
 import { DEFAULT_LANGUAGE_SETTINGS, getLanguageKey, LanguageDisplay } from "../../shared/Languages"
 import { ClineAskResponse, ClineCheckpointRestore } from "../../shared/WebviewMessage"
@@ -100,6 +101,7 @@ export class Task {
 	private postMessageToWebview: (message: ExtensionMessage) => Promise<void>
 	private reinitExistingTaskFromId: (taskId: string) => Promise<void>
 	private cancelTask: () => Promise<void>
+	private eventEmitter: EventEmitter // Store the emitter
 
 	readonly taskId: string
 	api: ApiHandler
@@ -159,6 +161,7 @@ export class Task {
 		postMessageToWebview: (message: ExtensionMessage) => Promise<void>,
 		reinitExistingTaskFromId: (taskId: string) => Promise<void>,
 		cancelTask: () => Promise<void>,
+		eventEmitter: EventEmitter, // Accept EventEmitter
 		apiConfiguration: ApiConfiguration,
 		autoApprovalSettings: AutoApprovalSettings,
 		browserSettings: BrowserSettings,
@@ -168,6 +171,7 @@ export class Task {
 		images?: string[],
 		historyItem?: HistoryItem,
 	) {
+		this.eventEmitter = eventEmitter // Store it
 		this.context = context
 		this.mcpHub = mcpHub
 		this.workspaceTracker = workspaceTracker
@@ -734,9 +738,15 @@ export class Task {
 			if (partial) {
 				if (isUpdatingPreviousPartial) {
 					// existing partial message, so update it
-					lastMessage.text = text
+					lastMessage.text = text // Update existing partial message
 					lastMessage.images = images
 					lastMessage.partial = partial
+					// Emit specific event for partial message update
+					this.eventEmitter.emit("partialMessage", {
+						id: lastMessage.ts.toString(),
+						text: lastMessage.text, // Send updated text
+					})
+					// Still post to webview for UI update
 					await this.postMessageToWebview({
 						type: "partialMessage",
 						partialMessage: lastMessage,
@@ -753,6 +763,11 @@ export class Task {
 						images,
 						partial,
 					})
+					// Emit specific event for partial message add
+					this.eventEmitter.emit("partialMessage", {
+						id: sayTs.toString(),
+						text: text,
+					})
 					await this.postStateToWebview()
 				}
 			} else {
@@ -765,12 +780,22 @@ export class Task {
 					lastMessage.images = images
 					lastMessage.partial = false
 
-					// instead of streaming partialMessage events, we do a save and post like normal to persist to disk
+					// Save completed message
 					await this.saveClineMessagesAndUpdateHistory()
-					// await this.postStateToWebview()
+					// Emit event for completed message
+					const completedMessage = cloneDeep(lastMessage) // Use a copy
+					if (completedMessage.say === "error") {
+						this.eventEmitter.emit("broadcastError", {
+							text: completedMessage.text || "An error occurred",
+							// Add details if available, might need to adjust based on how errors are structured
+						})
+					} else {
+						this.eventEmitter.emit("addMessage", completedMessage)
+					}
+					// Still post to webview for UI update
 					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
+						type: "partialMessage", // Webview uses this to know which message to update
+						partialMessage: lastMessage, // Send the final state
 					}) // more performant than an entire postStateToWebview
 				} else {
 					// this is a new partial=false message, so add it like normal
@@ -783,6 +808,15 @@ export class Task {
 						text,
 						images,
 					})
+					// Emit event for completed message
+					const newMessage = this.clineMessages.at(-1) // Get the newly added message
+					if (newMessage) {
+						if (newMessage.say === "error") {
+							this.eventEmitter.emit("broadcastError", { text: newMessage.text || "An error occurred" })
+						} else {
+							this.eventEmitter.emit("addMessage", newMessage)
+						}
+					}
 					await this.postStateToWebview()
 				}
 			}
@@ -797,6 +831,15 @@ export class Task {
 				text,
 				images,
 			})
+			// Emit event for complete message
+			const addedMessage = this.clineMessages.at(-1) // Get the newly added message
+			if (addedMessage) {
+				if (addedMessage.say === "error") {
+					this.eventEmitter.emit("broadcastError", { text: addedMessage.text || "An error occurred" })
+				} else {
+					this.eventEmitter.emit("addMessage", addedMessage)
+				}
+			}
 			await this.postStateToWebview()
 		}
 	}

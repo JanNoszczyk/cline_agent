@@ -284,7 +284,8 @@
 	},
 	"scripts": {
 		"vscode:prepublish": "npm run package",
-		"compile": "npm run check-types && npm run lint && node esbuild.js",
+		"generate:proto": "mkdir -p src/services/grpc/generated && grpc_tools_node_protoc --plugin=protoc-gen-ts=./node_modules/.bin/protoc-gen-ts --ts_out=grpc_js:./src/services/grpc/generated --js_out=import_style=commonjs,binary:./src/services/grpc/generated --grpc_out=grpc_js:./src/services/grpc/generated -I ./src/services/grpc -I ./node_modules/google-proto-files ./src/services/grpc/cline_control.proto",
+		"compile": "npm run generate:proto && npm run check-types && npm run lint && node esbuild.js",
 		"watch": "npm-run-all -p watch:*",
 		"watch:esbuild": "node esbuild.js --watch",
 		"watch:esbuild:test": "IS_TEST=true node esbuild.js --watch",
@@ -321,6 +322,7 @@
 		"@types/clone-deep": "^4.0.4",
 		"@types/diff": "^5.2.1",
 		"@types/get-folder-size": "^3.0.4",
+		"@types/google-protobuf": "^3.15.12",
 		"@types/mocha": "^10.0.7",
 		"@types/node": "20.x",
 		"@types/pdf-parse": "^1.1.4",
@@ -336,6 +338,8 @@
 		"chai": "^4.3.10",
 		"esbuild": "^0.25.0",
 		"eslint": "^8.57.0",
+		"google-proto-files": "^4.0.0",
+		"grpc-tools": "^1.12.4",
 		"husky": "^9.1.7",
 		"npm-run-all": "^4.1.5",
 		"prettier": "^3.3.3",
@@ -343,6 +347,7 @@
 		"should": "^13.2.3",
 		"sinon": "^19.0.2",
 		"ts-node": "^10.9.2",
+		"ts-protoc-gen": "^0.15.0",
 		"typescript": "^5.4.5"
 	},
 	"dependencies": {
@@ -352,6 +357,8 @@
 		"@aws-sdk/client-bedrock-runtime": "^3.758.0",
 		"@google-cloud/vertexai": "^1.9.3",
 		"@google/generative-ai": "^0.18.0",
+		"@grpc/grpc-js": "^1.10.8",
+		"@grpc/proto-loader": "^0.7.13",
 		"@mistralai/mistralai": "^1.5.0",
 		"@modelcontextprotocol/sdk": "^1.7.0",
 		"@opentelemetry/api": "^1.4.1",

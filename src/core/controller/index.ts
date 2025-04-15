@@ -2,6 +2,7 @@ import { Anthropic } from "@anthropic-ai/sdk"
 import axios from "axios"
 import type { AxiosRequestConfig } from "axios"
 import crypto from "crypto"
+import { EventEmitter } from "events" // 1. Import EventEmitter
 import fs from "fs/promises"
 import { setTimeout as setTimeoutPromise } from "node:timers/promises"
 import pWaitFor from "p-wait-for"
@@ -55,6 +56,7 @@ https://github.com/KumarVariable/vscode-extension-sidebar-html/blob/master/src/c
 export class Controller {
 	private postMessage: (message: ExtensionMessage) => Thenable<boolean> | undefined
 
+	public readonly eventEmitter: EventEmitter // 2. Add public emitter property
 	private disposables: vscode.Disposable[] = []
 	private task?: Task
 	workspaceTracker: WorkspaceTracker
@@ -69,8 +71,9 @@ export class Controller {
 	) {
 		this.outputChannel.appendLine("ClineProvider instantiated")
 		this.postMessage = postMessage
+		this.eventEmitter = new EventEmitter() // 2. Initialize emitter
 
-		this.workspaceTracker = new WorkspaceTracker((msg) => this.postMessageToWebview(msg))
+		this.workspaceTracker = new WorkspaceTracker((msg) => this.postMessageToWebview(msg)) // Keep this simple for now
 		this.mcpHub = new McpHub(
 			() => ensureMcpServersDirectoryExists(),
 			() => ensureSettingsDirectoryExists(this.context),
@@ -78,7 +81,7 @@ export class Controller {
 			this.context.extension?.packageJSON?.version ?? "1.0.0",
 		)
 		this.accountService = new ClineAccountService(
-			(msg) => this.postMessageToWebview(msg),
+			(msg) => this.postMessageToWebview(msg), // Keep this simple for now
 			async () => {
 				const { apiConfiguration } = await this.getStateToPostToWebview()
 				return apiConfiguration?.clineApiKey
@@ -143,6 +146,7 @@ export class Controller {
 			(message) => this.postMessageToWebview(message),
 			(taskId) => this.reinitExistingTaskFromId(taskId),
 			() => this.cancelTask(),
+			this.eventEmitter, // Pass the emitter instance
 			apiConfiguration,
 			autoApprovalSettings,
 			browserSettings,

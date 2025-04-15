@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package clinecontrol;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto"; // For potentially complex/dynamic structures
+
+// Service definition
+service ClineController {
+  // Bidirectional stream for commands and updates
+  rpc ControlStream(stream CommandRequest) returns (stream UpdateResponse);
+}
+
+// === Command Messages (Client -> Server/Extension) ===
+
+message CommandRequest {
+  string request_id = 1; // Optional: For correlating requests/responses if needed
+  oneof command {
+    StartTaskCommand start_task = 2;
+    UserInputCommmand user_input = 3;
+    ToolApprovalCommand tool_approval = 4;
+    RequestInitialState request_initial_state = 5;
+    CancelTaskCommand cancel_task = 6;
+    // Add other commands: update settings, etc.
+  }
+}
+
+message StartTaskCommand {
+  string initial_prompt = 1;
+  // Optional: Include settings overrides or specific task context
+}
+
+message UserInputCommmand {
+  string text = 1;
+  // Optional: Include task ID if supporting multiple concurrent tasks via gRPC
+}
+
+message ToolApprovalCommand {
+  string tool_call_id = 1; // ID of the tool use block needing approval
+  bool approved = 2;      // True if approved, false if rejected
+}
+
+message RequestInitialState {
+  // No payload needed, just the type implies the request
+}
+
+message CancelTaskCommand {
+   // Optional: Include task ID if supporting multiple concurrent tasks via gRPC
+}
+
+
+// === Update Messages (Server/Extension -> Client) ===
+
+// Mimic structure of src/shared/ExtensionMessage.ts
+message UpdateResponse {
+  string response_to_request_id = 1; // Optional: Correlate response to a specific request_id
+  oneof update {
+    InitialStateUpdate initial_state = 2;
+    AddMessageUpdate add_message = 3;
+    PartialMessageUpdate partial_message = 4;
+    ErrorUpdate error_update = 5;
+    TaskStateUpdate task_state = 6; // e.g., Running, Idle, WaitingForTool
+    ToolApprovalRequest tool_approval_request = 7;
+  }
+}
+
+// Corresponds to the initial state push to the webview
+message InitialStateUpdate {
+  string extension_version = 1;
+  repeated ClineMessage messages = 2;
+  // Include serialized versions of relevant state:
+  google.protobuf.Struct settings = 3; // Using Struct for flexibility with settings shape
+  string current_task_status = 4; // e.g., "idle", "running"
+  string current_task_id = 5;
+}
+
+message AddMessageUpdate {
+  ClineMessage message = 1; // Full message added
+}
+
+message PartialMessageUpdate {
+  string message_id = 1; // ID of the message being updated
+  string text_chunk = 2; // The partial text content
+  // Consider adding chunk type if more than text is streamed (e.g., partial tool info)
+}
+
+message ErrorUpdate {
+  string message = 1;
+  optional string details = 2;
+  string error_type = 3; // e.g., "api_error", "tool_error", "internal_error"
+}
+
+message TaskStateUpdate {
+  string status = 1; // e.g., "idle", "initializing", "running_api_request", "processing_tool_call", "waiting_tool_approval", "task_completed", "task_failed", "task_cancelled"
+  optional string task_id = 2;
+  optional string message = 3; // e.g., Reason for failure
+}
+
+message ToolApprovalRequest {
+    string tool_call_id = 1;
+    string tool_name = 2;
+    string tool_input_json = 3; // Tool input as JSON string
+    string message = 4; // User-facing message explaining the tool call
+}
+
+
+// --- Shared/Nested Message Types ---
+
+// Representation of message history/content
+message ClineMessage {
+  string id = 1;
+  string role = 2; // "user", "assistant", "system", "tool"
+  string type = 3; // "text", "tool_use", "tool_result", "error"
+  google.protobuf.Timestamp timestamp = 4;
+  // Using Struct for flexible content, could be specific types too
+  google.protobuf.Struct content = 5;
+}
