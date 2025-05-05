@@ -2,6 +2,7 @@ import { Anthropic } from "@anthropic-ai/sdk"
 import cloneDeep from "clone-deep"
 import { execa } from "execa"
 import getFolderSize from "get-folder-size"
+import { EventEmitter } from "events"
 import { setTimeout as setTimeoutPromise } from "node:timers/promises"
 import os from "os"
 import pTimeout from "p-timeout"
@@ -112,9 +113,10 @@ export class Task {
 	private workspaceTracker: WorkspaceTracker
 	private updateTaskHistory: (historyItem: HistoryItem) => Promise<HistoryItem[]>
 	private postStateToWebview: () => Promise<void>
-	private postMessageToWebview: (message: ExtensionMessage) => Promise<void>
+	private postMessageToWebview: (message: ExtensionMessage, taskId?: string) => Promise<void>
 	private reinitExistingTaskFromId: (taskId: string) => Promise<void>
 	private cancelTask: () => Promise<void>
+	private _emitter: EventEmitter
 
 	readonly taskId: string
 	api: ApiHandler
@@ -171,7 +173,7 @@ export class Task {
 		workspaceTracker: WorkspaceTracker,
 		updateTaskHistory: (historyItem: HistoryItem) => Promise<HistoryItem[]>,
 		postStateToWebview: () => Promise<void>,
-		postMessageToWebview: (message: ExtensionMessage) => Promise<void>,
+		postMessageToWebview: (message: ExtensionMessage, taskId?: string) => Promise<void>,
 		reinitExistingTaskFromId: (taskId: string) => Promise<void>,
 		cancelTask: () => Promise<void>,
 		apiConfiguration: ApiConfiguration,
@@ -206,6 +208,7 @@ export class Task {
 		this.autoApprovalSettings = autoApprovalSettings
 		this.browserSettings = browserSettings
 		this.chatSettings = chatSettings
+		this._emitter = new EventEmitter()
 
 		// Initialize taskId first
 		if (historyItem) {
@@ -435,17 +438,17 @@ export class Task {
 
 			await this.saveClineMessagesAndUpdateHistory()
 
-			await this.postMessageToWebview({ type: "relinquishControl" })
+			await this.postMessageToWebview({ type: "relinquishControl" }, this.taskId)
 
 			this.cancelTask() // the task is already cancelled by the provider beforehand, but we need to re-init to get the updated messages
 		} else {
-			await this.postMessageToWebview({ type: "relinquishControl" })
+			await this.postMessageToWebview({ type: "relinquishControl" }, this.taskId)
 		}
 	}
 
 	async presentMultifileDiff(messageTs: number, seeNewChangesSinceLastTaskCompletion: boolean) {
 		const relinquishButton = () => {
-			this.postMessageToWebview({ type: "relinquishControl" })
+			this.postMessageToWebview({ type: "relinquishControl" }, this.taskId)
 		}
 
 		console.log("presentMultifileDiff", messageTs)
@@ -650,10 +653,13 @@ export class Task {
 					// todo be more efficient about saving and posting only new data or one whole message at a time so ignore partial for saves, and only post parts of partial message instead of whole array in new listener
 					// await this.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
-					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
-					})
+					await this.postMessageToWebview(
+						{
+							type: "partialMessage",
+							partialMessage: lastMessage,
+						},
+						this.taskId,
+					) // Pass taskId
 					throw new Error("Current ask promise was ignored 1")
 				} else {
 					// this is a new partial message, so add it with partial state
@@ -693,10 +699,13 @@ export class Task {
 					lastMessage.partial = false
 					await this.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
-					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
-					})
+					await this.postMessageToWebview(
+						{
+							type: "partialMessage",
+							partialMessage: lastMessage,
+						},
+						this.taskId,
+					)
 				} else {
 					// this is a new partial=false message, so add it like normal
 					this.askResponse = undefined
@@ -766,10 +775,13 @@ export class Task {
 					lastMessage.text = text
 					lastMessage.images = images
 					lastMessage.partial = partial
-					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
-					})
+					await this.postMessageToWebview(
+						{
+							type: "partialMessage",
+							partialMessage: lastMessage,
+						},
+						this.taskId,
+					)
 				} else {
 					// this is a new partial message, so add it with partial state
 					const sayTs = Date.now()
@@ -797,10 +809,13 @@ export class Task {
 					// instead of streaming partialMessage events, we do a save and post like normal to persist to disk
 					await this.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
-					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
-					}) // more performant than an entire postStateToWebview
+					await this.postMessageToWebview(
+						{
+							type: "partialMessage",
+							partialMessage: lastMessage,
+						},
+						this.taskId,
+					) // more performant than an entire postStateToWebview
 				} else {
 					// this is a new partial=false message, so add it like normal
 					const sayTs = Date.now()
@@ -1060,6 +1075,14 @@ export class Task {
 		this.clineIgnoreController.dispose()
 		this.fileContextTracker.dispose()
 		await this.diffViewProvider.revertChanges() // need to await for when we want to make sure directories/files are reverted before re-starting the task from a checkpoint
+
+		// Notify listeners that this task instance is disposed
+		this._emitter.emit("dispose")
+	}
+
+	// Public method to subscribe to the dispose event
+	public onDispose(listener: () => void): void {
+		this._emitter.on("dispose", listener)
 	}
 
 	// Checkpoints

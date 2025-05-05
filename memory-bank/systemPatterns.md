@@ -34,25 +34,30 @@ graph LR
 *   **`proto/`**: Contains Protobuf definitions for the gRPC service (`task_control.proto`, etc.). These define the contract between the external client and the Cline gRPC server.
 *   **`src/services/grpc/server.ts`**: Implements the gRPC server logic. It uses a callback interface (`GrpcServerCallbacks`) for incoming requests and provides a notifier interface (`GrpcTaskNotifier`) for sending messages back to the client.
 *   **`src/services/grpc/mapper.ts` & `utils.ts`**: Handle the translation between Cline's internal data structures and the Protobuf message types.
-*   **`src/services/grpc/GrpcBridge.ts` (New)**:
+*   **`src/services/grpc/GrpcBridge.ts`**:
     *   Initialized in `src/extension.ts`.
-    *   Starts the `GrpcServer` and provides implementations for `GrpcServerCallbacks`.
+    *   Starts the `GrpcServer` and provides implementations for `GrpcServerCallbacks` (including `handleClientDisconnect`).
     *   Receives the `GrpcTaskNotifier` to send messages out.
-    *   Manages a mapping between external `clientId`s and internal `Task` instances.
-    *   Translates incoming gRPC requests into calls on the `Controller` or `Task`.
-    *   Intercepts outgoing messages (intended for the webview) from `Controller`/`Task` that belong to gRPC-controlled tasks and forwards them via the `GrpcTaskNotifier`.
+    *   Manages a mapping (`clientTaskMap`) between external `clientId`s and internal `Task` instances.
+    *   Listens for `Task.onDispose` events to clean up `clientTaskMap`.
+    *   Translates incoming gRPC requests into calls on the `Controller` or the specific `Task` instance (retrieved via `clientTaskMap`).
+    *   **Crucially:** Only provides input to a `Task` via `handleWebviewAskResponse` when the task is explicitly waiting (via `ask()`).
+    *   Intercepts outgoing messages (via wrapped `postMessageToWebview`) using the `taskId` to route messages to the correct gRPC client or the webview.
 *   **`src/extension.ts`**: Responsible for initializing and disposing of the `GrpcBridge`.
-*   **`src/core/controller/index.ts` (`Controller`)**: The core state manager. The `GrpcBridge` will interact with it to initiate tasks and potentially handle some incoming messages.
-*   **`src/core/task/index.ts` (`Task`)**: Represents an active agent task. The `GrpcBridge` needs to interact with the relevant `Task` instance to inject responses (like tool results or answers to `ask` prompts).
-*   **`src/core/webview/index.ts` (`WebviewProvider`)**: The standard way Cline communicates with its UI. The `GrpcBridge` needs a mechanism to intercept messages destined for the webview *if* they originate from a task controlled by gRPC.
+*   **`src/core/controller/index.ts` (`Controller`)**: The core state manager. `GrpcBridge` interacts with it to initiate tasks. `postMessageToWebview` signature updated to include `taskId`.
+*   **`src/core/task/index.ts` (`Task`)**: Represents an active agent task. Includes an `EventEmitter` to signal disposal via `onDispose`. `abortTask` triggers this event. Call sites for `postMessageToWebview` updated to pass `taskId`.
+*   **`src/core/webview/index.ts` (`WebviewProvider`)**: Standard UI communication channel. Receives messages routed by the `GrpcBridge` wrapper if they are not intended for a gRPC client.
 
 ## 3. Design Patterns & Decisions
 
 *   **Bridge Pattern:** `GrpcBridge` acts as a bridge between the gRPC interface and the Cline core.
-*   **Callback/Notifier:** The gRPC server uses callbacks for incoming actions and a notifier object for outgoing messages, decoupling the server logic from the bridge implementation.
-*   **Dependency Injection (Implicit):** `extension.ts` injects necessary dependencies (like `ExtensionContext`, potentially `WebviewProvider` or its `postMessage` function) into `GrpcBridge`.
-*   **Message Interception:** A key challenge is intercepting outgoing messages non-invasively. The preferred approach is likely wrapping the `postMessage` function passed to the `Controller` during initialization in `extension.ts`. This wrapper, provided by `GrpcBridge`, checks the task context (`clientId`) before deciding whether to route the message via gRPC or to the actual webview.
-*   **State Management:** The `GrpcBridge` maintains the `clientId`-to-`Task` mapping.
+*   **Callback/Notifier:** The gRPC server uses callbacks for incoming actions and a notifier object for outgoing messages.
+*   **Event Emitter (Observer Pattern):** `Task` uses an `EventEmitter` for disposal notification, allowing `GrpcBridge` to observe and react.
+*   **Dependency Injection (Implicit):** `extension.ts` injects dependencies into `GrpcBridge`.
+*   **Message Interception (Wrapper/Decorator):** `GrpcBridge` wraps `Controller.postMessageToWebview`. The wrapper uses the `taskId` provided in the message call to look up the `clientId` in `clientTaskMap` and route accordingly.
+*   **State Management:** `GrpcBridge` maintains the `clientId`-to-`Task` mapping, with cleanup handled via the `onDispose` listener.
+*   **Strictly Passive Interface (Pull-Based Interaction):** The gRPC client interaction model MUST strictly mirror the webview's pull-based model. The `GrpcBridge` acts solely as a passive interface. It MUST NOT initiate actions or modify internal `Task` state directly. It only provides input back to the `Task` (via `handleWebviewAskResponse`) when, and only when, the `Task` is explicitly waiting for input via an `ask()` call. Unsolicited inputs or attempts to trigger internal actions are forbidden.
+*   **Protobuf Structure Mirroring:** The Protobuf message definitions (especially those related to `WebviewMessage` payloads like `AskPayload`, `SayPayload`, etc.) MUST precisely mirror the structure and types defined in `src/shared/WebviewMessage.ts`. This ensures consistency and simplifies the mapping layer (`grpc-mapper.ts`).
 
 ## 4. Data Flow Summary
 

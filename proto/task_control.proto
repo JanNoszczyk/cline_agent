@@ -1067,6 +1067,9 @@ enum WebviewMessageType {
   GRPC_REQUEST = 68; // Renumbered (Used for tunneling gRPC calls if needed)
   TOGGLE_CLINE_RULE = 69; // Renumbered
   DELETE_CLINE_RULE = 70; // Renumbered
+  CONDENSE = 71; // Added from WebviewMessage.ts
+  COPY_TO_CLIPBOARD = 72; // Added from WebviewMessage.ts
+  UPDATE_TERMINAL_CONNECTION_TIMEOUT = 73; // Added from WebviewMessage.ts
 }
 
 enum AskResponseType {

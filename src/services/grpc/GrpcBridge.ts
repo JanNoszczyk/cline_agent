@@ -29,9 +29,13 @@ import { mapProtoToolResultToInternal } from "./mapper" // Import the new mapper
 import { formatResponse } from "@core/prompts/responses" // Import formatResponse for image blocks
 import Anthropic from "@anthropic-ai/sdk" // Import Anthropic for ContentBlockParam type
 import { Logger } from "@services/logging/Logger" // Import Logger
+import { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb" // Import Timestamp
+import { updateGlobalState } from "../../core/storage/state" // Import for settings update
+import { BrowserSettings } from "../../shared/BrowserSettings" // Import settings type
+import { handleFileServiceRequest } from "../../core/controller/file" // Import file handler
 
-// Define the expected signature for the postMessage function
-type PostMessageFunc = (message: ExtensionMessage) => Promise<void>
+// Define the expected signature for the postMessage function, now including taskId
+type PostMessageFunc = (message: ExtensionMessage, taskId?: string) => Promise<void>
 
 /**
  * Bridges the external gRPC server with the internal Cline Controller and Task logic.
@@ -43,7 +47,7 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	private clientTaskMap = new Map<string, Task>() // Map external clientId to internal Task instance
 	private disposables: vscode.Disposable[] = []
 
-	private originalPostMessage?: PostMessageFunc // Store original using the correct type
+	private originalPostMessage?: PostMessageFunc // Store original using the updated type
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context
@@ -123,11 +127,18 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 					})
 				}
 
-				// TODO: Handle task disposal to remove from map. Requires Task to emit an event.
-				// taskInstance.onDidDispose(() => {
-				//     this.clientTaskMap.delete(clientId);
-				//     console.log(`[GrpcBridge] Removed task mapping for client ${clientId} upon disposal.`);
-				// });
+				// Register listener for task disposal
+				taskInstance.onDispose(() => {
+					if (this.clientTaskMap.delete(clientId)) {
+						console.log(
+							`[GrpcBridge] Removed task mapping for client ${clientId} (task ${taskInstance.taskId}) upon disposal.`,
+						)
+					} else {
+						console.warn(
+							`[GrpcBridge] Attempted to remove task mapping for client ${clientId} on disposal, but it was not found in the map.`,
+						)
+					}
+				})
 			} else {
 				console.error(`[GrpcBridge] Failed to get task instance after calling controller.initTask for client ${clientId}`)
 				throw new Error("Task instance could not be retrieved after initialization")
@@ -157,130 +168,52 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	}
 
 	/**
-	 * Handles a tool result received from the external gRPC client by directly
-	 * manipulating the target Task's state.
+	 * Handles a tool result received from the external gRPC client.
+	 * NOTE: Based on user feedback, tool execution is internal. This callback
+	 * should likely not be used or should error if called unexpectedly.
 	 */
-	// Change parameter type to match mapper expectation
 	async handleToolResult(clientId: string, result: Partial<ProtoToolResultBlock>): Promise<void> {
-		Logger.info(`[GrpcBridge] handleToolResult received for client ${clientId}`)
+		Logger.warn(
+			`[GrpcBridge] handleToolResult received for client ${clientId}, but external tool execution is not expected. Ignoring.`,
+		)
 		const task = this.clientTaskMap.get(clientId)
-		if (task) {
-			// --- Direct Task State Manipulation ---
-			// WARNING: Accessing internal Task properties directly. Less ideal than dedicated methods.
-			try {
-				// Map the proto result to the internal format
-				const internalToolResponse: ToolResponse = mapProtoToolResultToInternal(result)
-
-				// Prepare content blocks for the next API request
-				const toolResultBlocks: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam)[] = []
-				toolResultBlocks.push({
-					type: "text",
-					// TODO: Include tool description if possible/needed?
-					// Requires knowing which tool call this result corresponds to.
-					// For now, just label it generically.
-					text: `Tool Result:`,
-				})
-
-				if (typeof internalToolResponse === "string") {
-					toolResultBlocks.push({
-						type: "text",
-						text: internalToolResponse || "(tool did not return anything)",
-					})
-				} else {
-					// Handle array of blocks (likely text + images)
-					toolResultBlocks.push(...internalToolResponse)
-				}
-
-				// Inject the result into the task's userMessageContent
-				// Ensure this doesn't conflict with ongoing streaming/tool execution within the task
-				// This assumes the task loop is currently waiting (e.g., after an API call)
-				// or that appending here is safe.
-				// @ts-expect-error Accessing private property
-				task.userMessageContent = toolResultBlocks // Replace existing content with the tool result
-				// @ts-expect-error Accessing private property
-				task.userMessageContentReady = true // Signal the task loop to continue
-
-				Logger.info(`[GrpcBridge] Injected tool result into task ${task.taskId} and set userMessageContentReady.`)
-			} catch (error) {
-				Logger.error(`[GrpcBridge] Error processing tool result for task ${task.taskId}:`, error)
-				// Attempt to signal error back to the task loop if possible
-				try {
-					// @ts-expect-error Accessing private property
-					task.userMessageContent = [
-						{
-							type: "text",
-							text: formatResponse.toolError(
-								`GrpcBridge failed to process tool result: ${error instanceof Error ? error.message : String(error)}`,
-							),
-						},
-					]
-					// @ts-expect-error Accessing private property
-					task.userMessageContentReady = true
-				} catch (innerError) {
-					Logger.error(`[GrpcBridge] Failed to inject error message into task ${task.taskId}:`, innerError)
-				}
-			}
-			// --- End Direct Manipulation ---
-		} else {
+		if (!task) {
 			Logger.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleToolResult`)
 		}
+		// Do nothing, as tool results are handled internally by the Task.
+		// If this function being called indicates a misunderstanding in the protocol
+		// or client implementation, consider throwing an error:
+		// throw new Error("handleToolResult called, but external tool execution is not supported/expected.");
 	}
 
 	/**
-	 * Handles user input text/images received from the external gRPC client by directly
-	 * manipulating the target Task's state.
+	 * Handles user input text/images received from the external gRPC client.
+	 * This should only succeed if the Task is currently waiting for an 'ask' response.
 	 */
 	async handleUserInput(clientId: string, text?: string, images?: string[]): Promise<void> {
 		Logger.info(`[GrpcBridge] handleUserInput received for client ${clientId}`)
 		const task = this.clientTaskMap.get(clientId)
 		if (task) {
-			// --- Direct Task State Manipulation ---
-			// WARNING: Accessing internal Task properties directly. Less ideal than dedicated methods.
-			try {
-				const inputBlocks: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam)[] = []
-				if (text) {
-					inputBlocks.push({ type: "text", text: text })
-				}
-				if (images && images.length > 0) {
-					// Assuming images are base64 data URLs
-					inputBlocks.push(...formatResponse.imageBlocks(images))
-				}
-
-				if (inputBlocks.length === 0) {
-					Logger.warn(`[GrpcBridge] Received handleUserInput for client ${clientId} with no text or images.`)
-					return // Nothing to inject
-				}
-
-				// Inject the user input into the task's userMessageContent
-				// This replaces any pending content and signals the loop to proceed with this new input.
-				// @ts-expect-error Accessing private property
-				task.userMessageContent = inputBlocks
-				// @ts-expect-error Accessing private property
-				task.userMessageContentReady = true // Signal the task loop to continue
-
-				Logger.info(`[GrpcBridge] Injected user input into task ${task.taskId} and set userMessageContentReady.`)
-			} catch (error) {
-				Logger.error(`[GrpcBridge] Error processing user input for task ${task.taskId}:`, error)
-				// Attempt to signal error back to the task loop if possible
-				try {
-					// @ts-expect-error Accessing private property
-					task.userMessageContent = [
-						{
-							type: "text",
-							text: formatResponse.toolError(
-								`GrpcBridge failed to process user input: ${error instanceof Error ? error.message : String(error)}`,
-							),
-						},
-					]
-					// @ts-expect-error Accessing private property
-					task.userMessageContentReady = true
-				} catch (innerError) {
-					Logger.error(`[GrpcBridge] Failed to inject error message into task ${task.taskId}:`, innerError)
-				}
+			// Check if the task is actually waiting for an ask response.
+			// We approximate this by checking if the internal askResponse property is undefined.
+			// A more robust check would involve a state property on the Task class itself.
+			// @ts-expect-error Accessing private property for state check
+			if (task.askResponse === undefined) {
+				// Task is likely not waiting for an ask response.
+				Logger.warn(
+					`[GrpcBridge] Received user input for task ${task.taskId} via handleUserInput, but the task is not currently waiting for an 'ask' response. Input ignored.`,
+				)
+				// Optionally, notify the client via gRPC error
+				throw new Error("Task is not currently expecting input.")
+			} else {
+				// Task seems to be waiting for an ask response. Use the existing mechanism.
+				// We simulate a 'messageResponse' type of ask response.
+				Logger.info(`[GrpcBridge] Forwarding user input as 'messageResponse' to task ${task.taskId}`)
+				task.handleWebviewAskResponse("messageResponse", text, images)
 			}
-			// --- End Direct Manipulation ---
 		} else {
 			Logger.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleUserInput`)
+			throw new Error("Task associated with client ID not found.")
 		}
 	}
 
@@ -310,37 +243,46 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	// --- New Specific Callback Implementations ---
 
 	async handleClearTask(clientId: string): Promise<void> {
-		console.log(`[GrpcBridge] handleClearTask received for client ${clientId}`)
+		console.log(`[GrpcBridge] handleClearTask received for client ${clientId}. Treating as abort request.`)
 		const task = this.clientTaskMap.get(clientId)
-		if (task && this.controller) {
-			// TODO: Determine if clearTask should operate on the specific task or globally via controller
-			console.log(`[GrpcBridge] Clearing task ${task.taskId}`)
-			await this.controller.clearTask() // Assuming controller.clearTask() handles the active task
+		if (task) {
+			console.log(`[GrpcBridge] Aborting task ${task.taskId} due to clearTask request from client ${clientId}.`)
+			try {
+				// Call abortTask directly on the specific task instance.
+				// This triggers the 'dispose' event for map cleanup.
+				await task.abortTask()
+			} catch (error) {
+				console.error(
+					`[GrpcBridge] Error aborting task ${task.taskId} during handleClearTask for client ${clientId}:`,
+					error,
+				)
+				// Optionally notify client of error
+			}
 		} else {
-			if (!task) console.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleClearTask`)
-			if (!this.controller) console.warn(`[GrpcBridge] Controller not available in handleClearTask`)
-			// If no task is mapped, maybe clear the global controller task?
-			// await this.controller?.clearTask();
+			console.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleClearTask`)
+			// Optionally notify client that task was not found
 		}
 	}
 
 	async handleCancelTask(clientId: string): Promise<void> {
 		console.log(`[GrpcBridge] handleCancelTask received for client ${clientId}`)
 		const task = this.clientTaskMap.get(clientId)
-		if (task && this.controller) {
-			console.log(`[GrpcBridge] Cancelling task ${task.taskId}`)
-			// Assuming cancelTask on controller handles the currently active task,
-			// need to ensure it targets the correct one if multiple tasks could exist.
-			if (this.controller.task?.taskId === task.taskId) {
-				await this.controller.cancelTask()
-			} else {
-				console.warn(`[GrpcBridge] Attempted to cancel task ${task.taskId} which is not the controller's active task.`)
-				// Maybe call task.abortTask() directly? Requires exposing it or adding a controller method.
-				// await task.abortTask();
+		if (task) {
+			console.log(`[GrpcBridge] Aborting task ${task.taskId} due to cancelTask request from client ${clientId}.`)
+			try {
+				// Call abortTask directly on the specific task instance.
+				// This triggers the 'dispose' event for map cleanup.
+				await task.abortTask()
+			} catch (error) {
+				console.error(
+					`[GrpcBridge] Error aborting task ${task.taskId} during handleCancelTask for client ${clientId}:`,
+					error,
+				)
+				// Optionally notify client of error
 			}
 		} else {
-			if (!task) console.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleCancelTask`)
-			if (!this.controller) console.warn(`[GrpcBridge] Controller not available in handleCancelTask`)
+			console.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleCancelTask`)
+			// Optionally notify client that task was not found
 		}
 	}
 
@@ -371,22 +313,53 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 		// Example:
 		// import { updateGlobalState } from '../../core/storage/state';
 		// import { BrowserSettings } from '../../shared/BrowserSettings';
-		// await updateGlobalState(this.context, 'browserSettings', settings as BrowserSettings);
-		// await this.controller?.postStateToWebview(); // Notify webview if needed
-		console.warn("[GrpcBridge] handleApplyBrowserSettings: Implementation pending.")
+		try {
+			// Assuming the incoming 'settings' object matches the BrowserSettings structure
+			await updateGlobalState(this.context, "browserSettings", settings as BrowserSettings)
+			// Notify the webview (and potentially other parts of the extension) about the state change
+			await this.controller?.postStateToWebview()
+			console.log(`[GrpcBridge] Applied browser settings for client ${clientId}`)
+		} catch (error) {
+			console.error(`[GrpcBridge] Error applying browser settings for client ${clientId}:`, error)
+			throw new Error(`Failed to apply browser settings: ${error instanceof Error ? error.message : String(error)}`)
+		}
 	}
 
 	async handleOpenFile(clientId: string, filePath: string): Promise<void> {
 		console.log(`[GrpcBridge] handleOpenFile received for client ${clientId}, path ${filePath}`)
 		if (this.controller) {
-			// Use the handleFileServiceRequest function, assuming it's accessible/importable.
-			// Need to import handleFileServiceRequest from '../../core/controller/file';
-			// Example:
-			// import { handleFileServiceRequest } from '../../core/controller/file';
-			// await handleFileServiceRequest(this.controller, "openFile", { value: filePath });
-			console.warn("[GrpcBridge] handleOpenFile: Implementation pending (requires handleFileServiceRequest import/access).")
+			try {
+				// Call the imported file service handler
+				await handleFileServiceRequest(this.controller, "openFile", { value: filePath })
+				console.log(`[GrpcBridge] Opened file ${filePath} for client ${clientId}`)
+			} catch (error) {
+				console.error(`[GrpcBridge] Error opening file ${filePath} for client ${clientId}:`, error)
+				throw new Error(`Failed to open file: ${error instanceof Error ? error.message : String(error)}`)
+			}
 		} else {
 			console.warn(`[GrpcBridge] Controller not available in handleOpenFile`)
+			throw new Error("Controller not available to handle openFile request.")
+		}
+	}
+
+	/**
+	 * Handles the disconnection of a gRPC client.
+	 * Finds the associated task and aborts it.
+	 */
+	async handleClientDisconnect(clientId: string): Promise<void> {
+		console.log(`[GrpcBridge] handleClientDisconnect received for client ${clientId}`)
+		const task = this.clientTaskMap.get(clientId)
+		if (task) {
+			console.log(`[GrpcBridge] Aborting task ${task.taskId} due to client ${clientId} disconnection.`)
+			try {
+				// Calling abortTask will trigger the 'dispose' event,
+				// which in turn removes the task from clientTaskMap via the listener in initTask.
+				await task.abortTask()
+			} catch (error) {
+				console.error(`[GrpcBridge] Error aborting task ${task.taskId} for disconnected client ${clientId}:`, error)
+			}
+		} else {
+			console.warn(`[GrpcBridge] Client ${clientId} disconnected, but no associated task found in the map.`)
 		}
 	}
 
@@ -395,21 +368,19 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	/**
 	 * Creates a wrapper around the original postMessage function to intercept messages.
 	 * Creates a wrapper around the original postMessage function to intercept messages.
-	 * @param originalPostMessage The original function (bound to the controller) to send messages to the webview.
-	 * @returns A new function that intercepts messages for gRPC tasks, matching the original signature.
+	 * @param originalPostMessage The original function (bound to the controller) to send messages to the webview, accepting taskId.
+	 * @returns A new function that intercepts messages for gRPC tasks, matching the updated signature.
 	 */
 	private getWrappedPostMessage(originalPostMessage: PostMessageFunc): PostMessageFunc {
-		// Return the wrapper function
-		return (message: ExtensionMessage): Promise<void> => {
-			// Determine if this message belongs to a gRPC-controlled task
-			// Get the taskId from the controller's currently active task
-			const activeTaskId = this.controller?.task?.taskId
-			const clientId = this.findClientIdByTaskId(activeTaskId) // Use the active task's ID
+		// Return the wrapper function, now accepting taskId
+		return (message: ExtensionMessage, taskId?: string): Promise<void> => {
+			// Determine if this message belongs to a gRPC-controlled task using the provided taskId
+			const clientId = this.findClientIdByTaskId(taskId) // Use the taskId passed from the Controller
 
-			// If it's a gRPC task (based on the controller's active task) and the notifier is ready, intercept and process
+			// If it's a gRPC task (based on the provided taskId) and the notifier is ready, intercept and process
 			if (clientId && this.grpcNotifier) {
 				console.log(
-					`[GrpcBridge] Intercepted message type ${message?.type || "unknown"} for gRPC client ${clientId}, task ${activeTaskId}`,
+					`[GrpcBridge] Intercepted message type ${message?.type || "unknown"} for gRPC client ${clientId}, task ${taskId}`,
 				)
 				try {
 					// <<< TRY starts
@@ -475,8 +446,7 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 											ask_type: extMsg.partialMessage.ask, // Use the ask type from ClineMessage
 											text: extMsg.partialMessage.text, // The text payload (often JSON for structured asks)
 											partial: extMsg.partialMessage.partial,
-											// ts: Timestamp.fromDate(new Date(extMsg.partialMessage.ts)), // Convert number timestamp to proto Timestamp
-											// TODO: Uncomment Timestamp conversion once google-protobuf is confirmed working
+											ts: Timestamp.fromDate(new Date(extMsg.partialMessage.ts)), // Convert number timestamp to proto Timestamp
 										}
 										this.grpcNotifier.notifyAsk(clientId, protoAskReq)
 									}
@@ -512,9 +482,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 					return Promise.resolve() // Indicate failure, message not sent to webview either.
 				}
 			} else {
-				// Not a gRPC task, or notifier not ready, or no taskId.
-				// Call the original postMessage function to send the message to the webview as normal.
-				return originalPostMessage(message)
+				// Not a gRPC task (no clientId found for the taskId), or notifier not ready.
+				// Call the original postMessage function, passing the message AND the taskId along.
+				return originalPostMessage(message, taskId)
 			}
 		}
 	}

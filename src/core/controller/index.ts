@@ -182,9 +182,12 @@ export class Controller {
 		}
 	}
 
-	// Send any JSON serializable data to the react app
-	async postMessageToWebview(message: ExtensionMessage) {
-		await this.postMessage(message)
+	// Send any JSON serializable data to the react app, optionally specifying the originating taskId
+	async postMessageToWebview(message: ExtensionMessage, taskId?: string) {
+		// Pass the message and taskId to the underlying postMessage function
+		// (which might be the original WebviewProvider.postMessage or the GrpcBridge wrapper)
+		// @ts-expect-error - Assuming the underlying postMessage function will be updated to accept taskId
+		await this.postMessage(message, taskId)
 	}
 
 	/**

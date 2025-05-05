@@ -1,30 +1,51 @@
-# Active Context: Cline gRPC Integration (Mapper Fixes)
+# Active Context: Cline gRPC Bridge Implementation & Refactoring
+
+# Active Context: Cline gRPC Bridge Implementation & Refactoring
 
 ## 1. Current Focus
 
-Verify the recent TypeScript fixes in the gRPC mapping layer (`src/services/grpc/mapper.ts`) and ensure the `GrpcBridge` and `server` components are now type-correct. Prepare for the next steps, likely involving implementing more `GrpcBridge` callbacks or testing the existing mapping logic.
+Continue addressing issues identified during the gRPC bridge review. Based on user feedback, the priority is now to ensure the bridge only interacts with the `Task` class via existing, safe mechanisms, specifically responding only when the `Task` explicitly `ask()`s for input.
 
-## 2. Recent Changes
+## 2. Review Findings Summary (Recap)
 
-*   **gRPC Proto Generation:** Successfully ran `npm run protos` to generate TypeScript/Go code from `.proto` files.
-*   **Mapper Implementation:** Updated `src/services/grpc/mapper.ts` with generated types and refined mapping logic between internal Cline types (`ExtensionState`, `ClineMessage`, `ToolUse`, `ToolResponse`) and Protobuf types (`ProtoExtensionState`, `ProtoClineMessage`, etc.).
-*   **TypeScript Error Resolution:** Iteratively fixed numerous TypeScript errors in `src/services/grpc/mapper.ts`, `src/services/grpc/GrpcBridge.ts`, and `src/services/grpc/server.ts`. This involved:
-    *   Correcting `oneof` field handling using `$case` syntax and `any` casts where necessary.
-    *   Managing `Partial<>` vs. full proto types, primarily using `Partial<>` for return types and casting (`as ProtoType`) when assigning to fields expecting the full type (especially within `mapExtensionStateToProto` and `mapExtensionMessageToProto`).
-    *   Converting `Timestamp` objects to milliseconds (`number`) where required.
-    *   Fixing incorrect type imports and references (e.g., `InternalExtensionMessage`).
-    *   Correcting default enum values (e.g., `ProtoExtensionMessageType.UNSPECIFIED` -> `0`).
-    *   Refining the `switch` statement in `mapExtensionMessageToProto` to correctly handle valid `InternalExtensionMessage` types (`state`, `partialMessage`) and access their corresponding payloads (`message.state`, `message.partialMessage`).
+1.  ~~**Unsafe State Manipulation (Highest Priority):** `GrpcBridge.handleToolResult` and `GrpcBridge.handleUserInput` directly modify internal `Task` properties.~~ (Addressed by changing approach)
+2.  **Fragile Message Routing:** `postMessageToWebview` wrapper relies on the *controller's active task* ID.
+3.  **Inadequate Task Lifecycle Handling:** Lack of `Task` disposal and client disconnection handling.
+4.  **Incorrect Task Context Usage:** Some callbacks (`handleClearTask`, `handleCancelTask`) target the active UI task.
+5.  **Timestamp Mapping Errors:** `mapper.ts` sends numbers instead of `Timestamp` objects.
+6.  **Incomplete/Risky Type Mapping:** `ProtoClineMessage` `oneof` mapping incomplete; casting needs validation.
 
-## 3. Next Steps
+## 3. Recent Changes (gRPC Refactoring Cycle)
 
-1.  **Verify Fixes:** Run the TypeScript compiler (`tsc` or via `npm run compile`) to confirm that all reported errors in `mapper.ts`, `GrpcBridge.ts`, and `server.ts` are resolved.
-2.  **Implement Remaining Callbacks:** Fill in the core logic for the remaining `GrpcServerCallbacks` methods within `src/services/grpc/GrpcBridge.ts` (e.g., `handleToolResult`, `handleUserInput`, `handleClearTask`, `handleCancelTask`). This may require adding methods to `Task` or `Controller`.
-3.  **Address Task Mapping/Disposal:** Resolve the TODOs related to reliably obtaining the `Task` instance in `GrpcBridge.initTask` and handling task disposal to clean up the `clientTaskMap`.
-4.  **Testing:** Begin testing the gRPC communication flow, potentially using the `sandbox-client`.
+*   **gRPC Implementation Review:** Completed.
+*   **Refined `GrpcBridge` Interaction:** Updated `GrpcBridge.ts` based on user feedback:
+    *   `handleToolResult` now logs a warning and does nothing, assuming tool execution is internal.
+    *   `handleUserInput` now checks if the `Task` is waiting for an `ask` response. If not, it throws an error; otherwise, it uses the safe `task.handleWebviewAskResponse` method.
+*   **Decision:** Decided *not* to add new injection methods (`injectExternalUserInput`, `injectExternalToolResult`) to `Task.ts`, adhering to the principle of only responding to explicit `ask()` calls.
+*   **Message Routing (`postMessageToWebview`):**
+    *   Modified `Controller.postMessageToWebview` signature to accept optional `taskId`.
+    *   Updated `GrpcBridge.getWrappedPostMessage` to use the `taskId` for routing decisions between gRPC client and webview.
+    *   Updated all call sites in `Task.ts` to pass `this.taskId`.
+*   **Task Lifecycle Handling:**
+    *   Added `EventEmitter` and `onDispose` method to `Task` class (`src/core/task/index.ts`).
+    *   Updated `GrpcBridge.initTask` to register an `onDispose` listener that removes the task from `clientTaskMap`.
+    *   Added `handleClientDisconnect` callback to `GrpcBridge` and `GrpcServerCallbacks`.
+    *   Updated `server.ts` (`registerClientStream`) to call `handleClientDisconnect` on stream `end`/`error`/`cancelled`.
+*   **Task Context Usage:** Refactored `handleClearTask` and `handleCancelTask` in `GrpcBridge.ts` to call `task.abortTask()` directly on the specific task instance retrieved via `clientTaskMap`.
+*   **Timestamp Mapping:** Corrected timestamp handling in `GrpcBridge.ts` (for `notifyAsk`) and simplified `int64` mapping in `mapper.ts` (`mapClineMessageToProto`).
+*   **Type Mapping (`oneof`):** Expanded `mapClineMessageToProto` in `mapper.ts` to handle most `ask`/`say` types and their payloads using `$case`. Corrected related TS errors (camelCase, enum values, missing constant).
+*   **Remaining Callbacks:** Implemented `handleApplyBrowserSettings` and `handleOpenFile` in `GrpcBridge.ts`.
 
-## 4. Active Decisions & Considerations
+## 4. Next Steps (Prioritized)
 
-*   **Mapper Strategy:** Settled on using `Partial<>` for most mapping function return types and employing `any` casts for `oneof` field assignments (`$case`) and explicit casts (`as ProtoType`) when assigning partial results to fields requiring the full type. This balances type safety with the practicalities of mapping complex, potentially incomplete objects.
-*   **`mapExtensionMessageToProto` Logic:** The `switch` statement now correctly handles `state` and `partialMessage` types based on the `InternalExtensionMessage` definition. It assumes `type: "text"` from the internal message structure also uses the `message.partialMessage` field for its content.
-*   **`clientId`-`Task` Mapping:** Remains a key area needing a robust solution for task retrieval and disposal handling.
+1.  **(Testing) End-to-End:** Thoroughly test the refactored gRPC communication flow using the `sandbox-client`.
+2.  **(Verification) Type Mapping:** Rigorously verify that all required proto fields are handled correctly in `mapper.ts`, minimizing risky casts, especially within `mapExtensionStateToProto` and the remaining unmapped `ClineMessage` payloads.
+3.  **(Refinement) Error Handling:** Improve error reporting back to the gRPC client in `GrpcBridge` and `server.ts`.
+4.  **(Refinement) Controller Interaction:** Review if `controller.initTask` needs modification to better support `GrpcBridge` (e.g., accepting `clientId`).
+
+## 5. Active Decisions & Considerations
+
+*   **Strictly Passive Interface:** Re-emphasized the critical principle: The gRPC bridge MUST act solely as a passive interface mirroring the webview. It MUST NOT initiate actions or modify internal `Task` state directly. Input is ONLY provided via `handleWebviewAskResponse` when the `Task` explicitly `ask()`s. Unsolicited input via `handleUserInput` is rejected. Tool results are handled internally by the `Task`.
+*   **Protobuf Structure Mirroring:** It is paramount that Protobuf message definitions (especially for `AskPayload`, `SayPayload`, etc.) precisely mirror the structure and types in `src/shared/WebviewMessage.ts`. This ensures consistency and simplifies mapping.
+*   **Task Lifecycle:** Robust handling of task creation, disposal, and cancellation triggered by external events (client disconnect) remains crucial.
+*   **Message Routing:** Decoupling message routing from the active UI task is essential.

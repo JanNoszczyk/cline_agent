@@ -83,6 +83,8 @@ export interface GrpcServerCallbacks {
 	handleApplyBrowserSettings: (clientId: string, settings: any) => Promise<void> // Use 'any' for now, replace with actual BrowserSettings type if available
 	/** Opens a file */
 	handleOpenFile: (clientId: string, filePath: string) => Promise<void>
+	/** Handles client disconnection */
+	handleClientDisconnect: (clientId: string) => Promise<void> // Added this line
 	// Add other specific handlers as needed...
 }
 
@@ -106,18 +108,38 @@ function generateClientId(): string {
 	return `client_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`
 }
 
-function registerClientStream(stream: grpc.ServerWritableStream<any, any>): string {
+// Modified to accept callbacks
+function registerClientStream(stream: grpc.ServerWritableStream<any, any>, callbacks: GrpcServerCallbacks): string {
 	const clientId = generateClientId()
 	activeStreams.set(clientId, stream)
+
+	const handleDisconnect = () => {
+		if (activeStreams.delete(clientId)) {
+			Logger.info(`[External GRPC] Client ${clientId} stream disconnected/ended.`)
+			// Call the callback to handle disconnection logic (e.g., abort task)
+			callbacks.handleClientDisconnect(clientId).catch((err: Error) => {
+				// Added ': Error' type annotation
+				Logger.error(
+					`[gRPC-Error: Server:registerClientStream] Error during handleClientDisconnect for ${clientId}: ${err.message}`,
+				)
+			})
+		}
+	}
+
 	stream.on("end", () => {
-		Logger.debug(`[gRPC-Debug: Server:registerClientStream] Stream ended for client ${clientId}`)
-		activeStreams.delete(clientId)
-		Logger.info(`[External GRPC] Client ${clientId} stream ended`)
+		Logger.debug(`[gRPC-Debug: Server:registerClientStream] Stream ended event for client ${clientId}`)
+		handleDisconnect()
 	})
 	stream.on("error", (error: Error) => {
-		Logger.error(`[gRPC-Debug: Server:registerClientStream] Stream error for client ${clientId}: ${error.message}`)
-		activeStreams.delete(clientId)
+		Logger.error(`[gRPC-Debug: Server:registerClientStream] Stream error event for client ${clientId}: ${error.message}`)
+		handleDisconnect() // Treat stream errors as disconnections
 	})
+	// Also handle cancellation explicitly if possible (often overlaps with 'error' or 'end')
+	stream.on("cancelled", () => {
+		Logger.debug(`[gRPC-Debug: Server:registerClientStream] Stream cancelled event for client ${clientId}`)
+		handleDisconnect()
+	})
+
 	Logger.info(`[External GRPC] Registered new client stream with ID ${clientId}`)
 	return clientId
 }
@@ -310,7 +332,8 @@ export function startExternalGrpcServer(
 					try {
 						const request = call.request
 						Logger.trace(`[gRPC-Trace: Server:startTask] Received request: ${JSON.stringify(request)}`)
-						clientId = registerClientStream(call)
+						// Pass callbacks to registerClientStream
+						clientId = registerClientStream(call, callbacks)
 						const currentClientId = clientId // Capture for use in async blocks
 						Logger.info(`[External GRPC] Handling startTask for new client ${currentClientId}`)
 
@@ -337,15 +360,7 @@ export function startExternalGrpcServer(
 								if (!call.destroyed) call.end() // End the gRPC call on error
 							})
 
-						// Stream event handlers
-						call.on("cancelled", () => {
-							Logger.info(`[GRPC] Client ${clientId} cancelled startTask`)
-							if (clientId) activeStreams.delete(clientId)
-						})
-						call.on("error", (error: Error) => {
-							Logger.error(`[GRPC Err] startTask stream ${clientId}: ${error.message}`)
-							if (clientId) activeStreams.delete(clientId)
-						})
+						// Stream event handlers are now inside registerClientStream
 					} catch (error: any) {
 						Logger.error(`[GRPC Err] Setup startTask stream: ${error.message}`)
 						if (grpcNotifier && clientId)

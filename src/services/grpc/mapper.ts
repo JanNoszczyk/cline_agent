@@ -51,12 +51,64 @@ import {
 	UserInfo as ProtoUserInfo,
 	ClineRulesToggles as ProtoClineRulesToggles,
 	// Import specific payload types if needed for detailed mapping
-	SayTextPayload as ProtoSayTextPayload,
+	// Import specific payload types for mapping
 	AskFollowupPayload as ProtoAskFollowupPayload,
+	AskPlanModeRespondPayload as ProtoAskPlanModeRespondPayload,
+	AskCommandPayload as ProtoAskCommandPayload,
+	AskCommandOutputPayload as ProtoAskCommandOutputPayload,
+	AskCompletionResultPayload as ProtoAskCompletionResultPayload,
+	AskToolPayload as ProtoAskToolPayload,
+	AskApiReqFailedPayload as ProtoAskApiReqFailedPayload,
+	AskResumeTaskPayload as ProtoAskResumeTaskPayload,
+	AskResumeCompletedTaskPayload as ProtoAskResumeCompletedTaskPayload,
+	AskMistakeLimitReachedPayload as ProtoAskMistakeLimitReachedPayload,
+	AskAutoApprovalMaxReqReachedPayload as ProtoAskAutoApprovalMaxReqReachedPayload,
+	AskBrowserActionLaunchPayload as ProtoAskBrowserActionLaunchPayload,
+	AskUseMcpServerPayload as ProtoAskUseMcpServerPayload,
+	AskNewTaskPayload as ProtoAskNewTaskPayload,
+	SayTaskPayload as ProtoSayTaskPayload,
+	SayErrorPayload as ProtoSayErrorPayload,
+	SayApiReqInfoPayload as ProtoSayApiReqInfoPayload,
+	SayTextPayload as ProtoSayTextPayload,
+	SayReasoningPayload as ProtoSayReasoningPayload,
+	SayCompletionResultPayload as ProtoSayCompletionResultPayload,
+	SayUserFeedbackPayload as ProtoSayUserFeedbackPayload,
+	SayUserFeedbackDiffPayload as ProtoSayUserFeedbackDiffPayload,
+	SayCommandPayload as ProtoSayCommandPayload,
+	SayCommandOutputPayload as ProtoSayCommandOutputPayload,
+	SayToolPayload as ProtoSayToolPayload,
+	SayToolType as ProtoSayToolType, // Import enum for mapping
+	SayShellIntegrationWarningPayload as ProtoSayShellIntegrationWarningPayload,
+	SayBrowserActionLaunchPayload as ProtoSayBrowserActionLaunchPayload,
+	SayBrowserActionPayload as ProtoSayBrowserActionPayload,
+	BrowserActionType as ProtoBrowserActionType, // Import enum for mapping
+	SayBrowserActionResultPayload as ProtoSayBrowserActionResultPayload,
+	SayMcpServerRequestStartedPayload as ProtoSayMcpServerRequestStartedPayload,
+	SayMcpServerResponsePayload as ProtoSayMcpServerResponsePayload,
+	SayUseMcpServerPayload as ProtoSayUseMcpServerPayload,
+	SayDiffErrorPayload as ProtoSayDiffErrorPayload,
+	SayDeletedApiReqsPayload as ProtoSayDeletedApiReqsPayload,
+	SayClineignoreErrorPayload as ProtoSayClineignoreErrorPayload,
+	SayCheckpointCreatedPayload as ProtoSayCheckpointCreatedPayload,
+	SayLoadMcpDocumentationPayload as ProtoSayLoadMcpDocumentationPayload,
+	ClineAskType as ProtoClineAskType, // Import enum for mapping
+	ClineSayType as ProtoClineSayType, // Import enum for mapping
+	AskUseMcpServerPayload_McpRequestType as ProtoMcpRequestType, // Import nested enum
+	// COMPLETION_RESULT_CHANGES_FLAG, // Removed import - Use string literal
 } from "../../shared/proto/task_control"
 
 import Anthropic from "@anthropic-ai/sdk" // Keep for ToolResponse type check
 import { formatResponse } from "../../core/prompts/responses"
+import {
+	ClineAskNewTask,
+	ClineAskQuestion,
+	ClineAskUseMcpServer,
+	ClinePlanModeResponse,
+	ClineSayBrowserAction,
+	ClineSayTool,
+	BrowserActionResult,
+	ClineApiReqInfo,
+} from "@shared/ExtensionMessage" // Import internal payload types
 
 // --- Helper Functions ---
 
@@ -282,11 +334,11 @@ export function mapClineMessageToProto(msg: InternalClineMessage | undefined): P
 		return type === "ask" ? ProtoClineMessageType.ASK : ProtoClineMessageType.SAY
 	}
 
-	const protoTs = dateToProtoTimestamp(msg.ts)
 	// Define as Partial, but ensure required fields like 'ts' have defaults
 	const protoMsg: Partial<ProtoClineMessage> = {
-		// Ensure ts is always a number, default to 0
-		ts: protoTs ? protoTs.toDate().getTime() : 0,
+		// Directly assign the number timestamp. The gRPC library handles int64 conversion.
+		// Provide a default of 0 if msg.ts is undefined/null.
+		ts: msg.ts ?? 0,
 		type: mapType(msg.type), // Required in Partial
 		images: msg.images ?? [],
 		partial: msg.partial ?? false,
@@ -297,39 +349,528 @@ export function mapClineMessageToProto(msg: InternalClineMessage | undefined): P
 	}
 
 	// Map specific payloads using $case
-	if (msg.type === "say" && msg.say === "text") {
-		// Use $case syntax for oneof
-		;(protoMsg as any).sayPayload = { $case: "sayTextPayload", sayTextPayload: { textContent: msg.text ?? "" } }
-	} else if (msg.type === "ask" && msg.ask === "followup") {
-		try {
-			const askPayloadContent = JSON.parse(msg.text || "{}")
-			// Use $case syntax for oneof
-			;(protoMsg as any).askPayload = {
-				$case: "askFollowupPayload",
-				askFollowupPayload: {
-					question: askPayloadContent.question ?? "",
-					options: askPayloadContent.options ?? [],
-				},
+	try {
+		if (msg.type === "ask") {
+			protoMsg.askType = mapInternalAskToProtoAskType(msg.ask) // Use camelCase: askType
+			switch (msg.ask) {
+				case "followup": {
+					const payload: ClineAskQuestion = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).askPayload = {
+						$case: "askFollowupPayload",
+						askFollowupPayload: {
+							question: payload.question ?? "",
+							options: payload.options ?? [],
+						} as ProtoAskFollowupPayload,
+					}
+					break
+				}
+				case "plan_mode_respond": {
+					const payload: ClinePlanModeResponse = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).askPayload = {
+						$case: "askPlanModeRespondPayload",
+						askPlanModeRespondPayload: {
+							response: payload.response ?? "",
+							options: payload.options ?? [],
+						} as ProtoAskPlanModeRespondPayload,
+					}
+					break
+				}
+				case "command":
+					;(protoMsg as any).askPayload = {
+						$case: "askCommandPayload",
+						askCommandPayload: { commandText: msg.text ?? "" } as ProtoAskCommandPayload,
+					}
+					break
+				case "command_output":
+					;(protoMsg as any).askPayload = {
+						$case: "askCommandOutputPayload",
+						askCommandOutputPayload: { outputText: msg.text ?? "" } as ProtoAskCommandOutputPayload,
+					}
+					break
+				case "completion_result":
+					;(protoMsg as any).askPayload = {
+						$case: "askCompletionResultPayload",
+						askCompletionResultPayload: { resultText: msg.text ?? "" } as ProtoAskCompletionResultPayload,
+					}
+					break
+				case "tool": {
+					const payload: ClineSayTool = JSON.parse(msg.text || "{}") // Assuming ask uses SayTool structure
+					;(protoMsg as any).askPayload = {
+						$case: "askToolPayload",
+						askToolPayload: {
+							toolDetails: mapInternalSayToolToProto(payload), // Reuse SayTool mapping
+						} as ProtoAskToolPayload,
+					}
+					break
+				}
+				case "api_req_failed":
+					;(protoMsg as any).askPayload = {
+						$case: "askApiReqFailedPayload",
+						askApiReqFailedPayload: { errorMessage: msg.text ?? "" } as ProtoAskApiReqFailedPayload,
+					}
+					break
+				case "resume_task":
+					;(protoMsg as any).askPayload = {
+						$case: "askResumeTaskPayload",
+						askResumeTaskPayload: { taskId: msg.text ?? "" } as ProtoAskResumeTaskPayload,
+					}
+					break
+				case "resume_completed_task":
+					;(protoMsg as any).askPayload = {
+						$case: "askResumeCompletedTaskPayload",
+						askResumeCompletedTaskPayload: { taskId: msg.text ?? "" } as ProtoAskResumeCompletedTaskPayload,
+					}
+					break
+				case "mistake_limit_reached":
+					;(protoMsg as any).askPayload = {
+						$case: "askMistakeLimitReachedPayload",
+						askMistakeLimitReachedPayload: {} as ProtoAskMistakeLimitReachedPayload,
+					}
+					break
+				case "auto_approval_max_req_reached":
+					;(protoMsg as any).askPayload = {
+						$case: "askAutoApprovalMaxReqReachedPayload",
+						askAutoApprovalMaxReqReachedPayload: {} as ProtoAskAutoApprovalMaxReqReachedPayload,
+					}
+					break
+				case "browser_action_launch":
+					;(protoMsg as any).askPayload = {
+						$case: "askBrowserActionLaunchPayload",
+						askBrowserActionLaunchPayload: { url: msg.text ?? "" } as ProtoAskBrowserActionLaunchPayload,
+					}
+					break
+				case "use_mcp_server": {
+					const payload: ClineAskUseMcpServer = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).askPayload = {
+						$case: "askUseMcpServerPayload",
+						askUseMcpServerPayload: {
+							serverName: payload.serverName ?? "",
+							type:
+								payload.type === "use_mcp_tool"
+									? ProtoMcpRequestType.USE_MCP_TOOL
+									: payload.type === "access_mcp_resource"
+										? ProtoMcpRequestType.ACCESS_MCP_RESOURCE
+										: ProtoMcpRequestType.MCP_REQUEST_TYPE_UNSPECIFIED,
+							toolName: payload.toolName ?? undefined,
+							argumentsJson: payload.arguments ?? undefined,
+							uri: payload.uri ?? undefined,
+						} as ProtoAskUseMcpServerPayload,
+					}
+					break
+				}
+				case "new_task": {
+					const payload: ClineAskNewTask = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).askPayload = {
+						$case: "askNewTaskPayload",
+						askNewTaskPayload: { context: payload.context ?? "" } as ProtoAskNewTaskPayload,
+					}
+					break
+				}
+				case "condense":
+					Logger.warn(
+						`[gRPC-Warn: Mapper:mapClineMessageToProto] Unhandled internal ask type 'condense'. Mapping to generic text.`,
+					)
+					protoMsg.text = msg.text ?? undefined // Fallback for unhandled type
+					break
+				default:
+					Logger.warn(
+						`[gRPC-Warn: Mapper:mapClineMessageToProto] Unknown internal ask type: ${msg.ask}. Mapping to generic text.`,
+					)
+					protoMsg.text = msg.text ?? undefined // Fallback for unknown type
 			}
-		} catch (e) {
-			Logger.warn("Failed to parse followup ask payload")
-			protoMsg.text = msg.text ?? undefined // Fallback to text
+		} else if (msg.type === "say") {
+			protoMsg.sayType = mapInternalSayToProtoSayType(msg.say) // Use camelCase: sayType
+			switch (msg.say) {
+				case "task":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayTaskPayload",
+						sayTaskPayload: { taskDescription: msg.text ?? "" } as ProtoSayTaskPayload,
+					}
+					break
+				case "error":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayErrorPayload",
+						sayErrorPayload: { errorMessage: msg.text ?? "" } as ProtoSayErrorPayload,
+					}
+					break
+				case "api_req_started":
+				case "api_req_finished":
+				case "api_req_retried": {
+					const payload: ClineApiReqInfo = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).sayPayload = {
+						$case: "sayApiReqInfoPayload",
+						sayApiReqInfoPayload: {
+							request: payload.request ?? undefined,
+							tokensIn: payload.tokensIn ?? undefined,
+							tokensOut: payload.tokensOut ?? undefined,
+							cacheWrites: payload.cacheWrites ?? undefined,
+							cacheReads: payload.cacheReads ?? undefined,
+							cost: payload.cost ?? undefined,
+							// Map cancelReason enum if needed
+						} as ProtoSayApiReqInfoPayload,
+					}
+					break
+				}
+				case "text":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayTextPayload",
+						sayTextPayload: { textContent: msg.text ?? "" } as ProtoSayTextPayload,
+					}
+					break
+				case "reasoning":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayReasoningPayload",
+						sayReasoningPayload: { reasoningText: msg.reasoning ?? msg.text ?? "" } as ProtoSayReasoningPayload, // Use reasoning field first
+					}
+					break
+				case "completion_result": {
+					const changesFlag = "HAS_CHANGES" // Use string literal
+					;(protoMsg as any).sayPayload = {
+						$case: "sayCompletionResultPayload",
+						sayCompletionResultPayload: {
+							resultText: msg.text?.replace(changesFlag, "") ?? "",
+							hasChanges: msg.text?.includes(changesFlag) ?? false,
+						} as ProtoSayCompletionResultPayload,
+					}
+					break
+				}
+				case "user_feedback":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayUserFeedbackPayload",
+						sayUserFeedbackPayload: { feedbackText: msg.text ?? "" } as ProtoSayUserFeedbackPayload,
+					}
+					break
+				case "user_feedback_diff":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayUserFeedbackDiffPayload",
+						sayUserFeedbackDiffPayload: { diffContent: msg.text ?? "" } as ProtoSayUserFeedbackDiffPayload,
+					}
+					break
+				case "command":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayCommandPayload",
+						sayCommandPayload: { commandText: msg.text ?? "" } as ProtoSayCommandPayload,
+					}
+					break
+				case "command_output":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayCommandOutputPayload",
+						sayCommandOutputPayload: { outputText: msg.text ?? "" } as ProtoSayCommandOutputPayload,
+					}
+					break
+				case "tool": {
+					const payload: ClineSayTool = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).sayPayload = {
+						$case: "sayToolPayload",
+						sayToolPayload: mapInternalSayToolToProto(payload),
+					}
+					break
+				}
+				case "shell_integration_warning":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayShellIntegrationWarningPayload",
+						sayShellIntegrationWarningPayload: {
+							warningMessage: msg.text ?? "",
+						} as ProtoSayShellIntegrationWarningPayload,
+					}
+					break
+				case "browser_action_launch":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayBrowserActionLaunchPayload",
+						sayBrowserActionLaunchPayload: { url: msg.text ?? "" } as ProtoSayBrowserActionLaunchPayload,
+					}
+					break
+				case "browser_action": {
+					const payload: ClineSayBrowserAction = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).sayPayload = {
+						$case: "sayBrowserActionPayload",
+						sayBrowserActionPayload: {
+							action: mapInternalBrowserActionToProto(payload.action),
+							coordinate: payload.coordinate ?? undefined,
+							text: payload.text ?? undefined,
+						} as ProtoSayBrowserActionPayload,
+					}
+					break
+				}
+				case "browser_action_result": {
+					const payload: BrowserActionResult = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).sayPayload = {
+						$case: "sayBrowserActionResultPayload",
+						sayBrowserActionResultPayload: {
+							screenshot: payload.screenshot ?? undefined,
+							logs: payload.logs ?? undefined,
+							currentUrl: payload.currentUrl ?? undefined,
+							currentMousePosition: payload.currentMousePosition ?? undefined,
+						} as ProtoSayBrowserActionResultPayload,
+					}
+					break
+				}
+				case "mcp_server_request_started":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayMcpServerRequestStartedPayload",
+						sayMcpServerRequestStartedPayload: {
+							serverName: msg.text ?? "",
+						} as ProtoSayMcpServerRequestStartedPayload,
+					}
+					break
+				case "mcp_server_response": {
+					const payload = JSON.parse(msg.text || "{}") // Assuming { serverName: string, response: any }
+					;(protoMsg as any).sayPayload = {
+						$case: "sayMcpServerResponsePayload",
+						sayMcpServerResponsePayload: {
+							serverName: payload.serverName ?? "",
+							responseContent: JSON.stringify(payload.response) ?? "", // Stringify the response part
+						} as ProtoSayMcpServerResponsePayload,
+					}
+					break
+				}
+				case "use_mcp_server": {
+					// Assuming say uses the same structure as ask
+					const payload: ClineAskUseMcpServer = JSON.parse(msg.text || "{}")
+					;(protoMsg as any).sayPayload = {
+						$case: "sayUseMcpServerPayload",
+						sayUseMcpServerPayload: {
+							details: {
+								serverName: payload.serverName ?? "",
+								type:
+									payload.type === "use_mcp_tool"
+										? ProtoMcpRequestType.USE_MCP_TOOL
+										: payload.type === "access_mcp_resource"
+											? ProtoMcpRequestType.ACCESS_MCP_RESOURCE
+											: ProtoMcpRequestType.MCP_REQUEST_TYPE_UNSPECIFIED,
+								toolName: payload.toolName ?? undefined,
+								argumentsJson: payload.arguments ?? undefined,
+								uri: payload.uri ?? undefined,
+							},
+						} as ProtoSayUseMcpServerPayload,
+					}
+					break
+				}
+				case "diff_error": {
+					const payload = JSON.parse(msg.text || "{}") // Assuming { error: string, path: string }
+					;(protoMsg as any).sayPayload = {
+						$case: "sayDiffErrorPayload",
+						sayDiffErrorPayload: {
+							errorMessage: payload.error ?? "",
+							path: payload.path ?? "",
+						} as ProtoSayDiffErrorPayload,
+					}
+					break
+				}
+				case "deleted_api_reqs": {
+					const payload = JSON.parse(msg.text || "{}") // Assuming { count: number }
+					;(protoMsg as any).sayPayload = {
+						$case: "sayDeletedApiReqsPayload",
+						sayDeletedApiReqsPayload: { count: payload.count ?? 0 } as ProtoSayDeletedApiReqsPayload,
+					}
+					break
+				}
+				case "clineignore_error":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayClineignoreErrorPayload",
+						sayClineignoreErrorPayload: { errorMessage: msg.text ?? "" } as ProtoSayClineignoreErrorPayload,
+					}
+					break
+				case "checkpoint_created":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayCheckpointCreatedPayload",
+						sayCheckpointCreatedPayload: { checkpointHash: msg.text ?? "" } as ProtoSayCheckpointCreatedPayload,
+					}
+					break
+				case "load_mcp_documentation":
+					;(protoMsg as any).sayPayload = {
+						$case: "sayLoadMcpDocumentationPayload",
+						sayLoadMcpDocumentationPayload: {} as ProtoSayLoadMcpDocumentationPayload,
+					}
+					break
+				default:
+					Logger.warn(
+						`[gRPC-Warn: Mapper:mapClineMessageToProto] Unknown internal say type: ${msg.say}. Mapping to generic text.`,
+					)
+					protoMsg.text = msg.text ?? undefined // Fallback for unknown type
+			}
+		} else {
+			// Fallback for messages that are neither 'ask' nor 'say' (shouldn't happen with current types)
+			protoMsg.text = msg.text ?? undefined
 		}
-	}
-	// ... Add mappings for ALL other ask/say types and payloads ...
-	else {
-		// Fallback to generic text field if no specific payload mapped
+	} catch (e: any) {
+		Logger.error(
+			`[gRPC-Error: Mapper:mapClineMessageToProto] Error parsing payload for ${msg.type} (${msg.ask || msg.say}): ${e.message}`,
+		)
+		// Fallback to generic text in case of parsing error
 		protoMsg.text = msg.text ?? undefined
+		// Clear any partially set payload
+		delete (protoMsg as any).askPayload
+		delete (protoMsg as any).sayPayload
+		delete protoMsg.askType // Use camelCase
+		delete protoMsg.sayType // Use camelCase
 	}
 
-	// Clear generic text if a specific payload was set (optional, depends on client handling)
-	// Use 'any' cast to access $case for check
+	// Clear generic text if a specific payload was successfully set
 	if ((protoMsg as any).askPayload?.$case || (protoMsg as any).sayPayload?.$case) {
-		protoMsg.text = undefined
+		// Only clear text if it wasn't explicitly set as the fallback
+		if (protoMsg.text === msg.text) {
+			protoMsg.text = undefined
+		}
 	}
 
 	Logger.trace(`[gRPC-Trace: Mapper:mapClineMessageToProto] Output: ${JSON.stringify(protoMsg)}`)
 	return protoMsg // Return Partial object
+}
+
+// Helper to map internal ClineSayTool to ProtoSayToolPayload
+function mapInternalSayToolToProto(payload: ClineSayTool | undefined): Partial<ProtoSayToolPayload> {
+	if (!payload) return {}
+
+	let protoToolType: ProtoSayToolType = ProtoSayToolType.SAY_TOOL_TYPE_UNSPECIFIED
+	switch (payload.tool) {
+		case "editedExistingFile":
+			protoToolType = ProtoSayToolType.EDITED_EXISTING_FILE
+			break
+		case "newFileCreated":
+			protoToolType = ProtoSayToolType.NEW_FILE_CREATED
+			break
+		case "readFile":
+			protoToolType = ProtoSayToolType.READ_FILE
+			break
+		case "listFilesTopLevel":
+			protoToolType = ProtoSayToolType.LIST_FILES_TOP_LEVEL
+			break
+		case "listFilesRecursive":
+			protoToolType = ProtoSayToolType.LIST_FILES_RECURSIVE
+			break
+		case "listCodeDefinitionNames":
+			protoToolType = ProtoSayToolType.LIST_CODE_DEFINITION_NAMES
+			break
+		case "searchFiles":
+			protoToolType = ProtoSayToolType.SAY_SEARCH_FILES
+			break
+	}
+
+	return {
+		tool: protoToolType,
+		path: payload.path ?? undefined,
+		diff: payload.diff ?? undefined,
+		content: payload.content ?? undefined,
+		regex: payload.regex ?? undefined,
+		filePattern: payload.filePattern ?? undefined,
+		operationIsLocatedInWorkspace: payload.operationIsLocatedInWorkspace ?? undefined,
+	}
+}
+
+// Helper to map internal BrowserAction string to ProtoBrowserActionType enum
+function mapInternalBrowserActionToProto(action: ClineSayBrowserAction["action"] | undefined): ProtoBrowserActionType {
+	switch (action) {
+		case "launch":
+			return ProtoBrowserActionType.LAUNCH
+		case "click":
+			return ProtoBrowserActionType.CLICK
+		case "type":
+			return ProtoBrowserActionType.TYPE
+		case "scroll_down":
+			return ProtoBrowserActionType.SCROLL_DOWN
+		case "scroll_up":
+			return ProtoBrowserActionType.SCROLL_UP
+		case "close":
+			return ProtoBrowserActionType.CLOSE
+		default:
+			return ProtoBrowserActionType.BROWSER_ACTION_TYPE_UNSPECIFIED
+	}
+}
+
+// Helper to map internal ClineAsk string to ProtoClineAskType enum
+function mapInternalAskToProtoAskType(ask: InternalClineMessage["ask"] | undefined): ProtoClineAskType {
+	switch (ask) {
+		case "followup":
+			return ProtoClineAskType.FOLLOWUP
+		case "plan_mode_respond":
+			return ProtoClineAskType.PLAN_MODE_RESPOND
+		case "command":
+			return ProtoClineAskType.COMMAND
+		case "command_output":
+			return ProtoClineAskType.COMMAND_OUTPUT
+		case "completion_result":
+			return ProtoClineAskType.COMPLETION_RESULT
+		case "tool":
+			return ProtoClineAskType.TOOL
+		case "api_req_failed":
+			return ProtoClineAskType.API_REQ_FAILED
+		case "resume_task":
+			return ProtoClineAskType.RESUME_TASK
+		case "resume_completed_task":
+			return ProtoClineAskType.RESUME_COMPLETED_TASK
+		case "mistake_limit_reached":
+			return ProtoClineAskType.MISTAKE_LIMIT_REACHED
+		case "auto_approval_max_req_reached":
+			return ProtoClineAskType.AUTO_APPROVAL_MAX_REQ_REACHED
+		case "browser_action_launch":
+			return ProtoClineAskType.BROWSER_ACTION_LAUNCH
+		case "use_mcp_server":
+			return ProtoClineAskType.USE_MCP_SERVER
+		case "new_task":
+			return ProtoClineAskType.ASK_NEW_TASK // Corrected enum value
+		// case "condense": // Not in proto
+		default:
+			return ProtoClineAskType.CLINE_ASK_TYPE_UNSPECIFIED
+	}
+}
+
+// Helper to map internal ClineSay string to ProtoClineSayType enum
+function mapInternalSayToProtoSayType(say: InternalClineMessage["say"] | undefined): ProtoClineSayType {
+	switch (say) {
+		case "task":
+			return ProtoClineSayType.SAY_TASK
+		case "error":
+			return ProtoClineSayType.SAY_ERROR
+		case "api_req_started":
+			return ProtoClineSayType.API_REQ_STARTED
+		case "api_req_finished":
+			return ProtoClineSayType.API_REQ_FINISHED
+		case "text":
+			return ProtoClineSayType.SAY_TEXT
+		case "reasoning":
+			return ProtoClineSayType.REASONING
+		case "completion_result":
+			return ProtoClineSayType.SAY_COMPLETION_RESULT
+		case "user_feedback":
+			return ProtoClineSayType.USER_FEEDBACK
+		case "user_feedback_diff":
+			return ProtoClineSayType.USER_FEEDBACK_DIFF
+		case "api_req_retried":
+			return ProtoClineSayType.API_REQ_RETRIED
+		case "command":
+			return ProtoClineSayType.SAY_COMMAND
+		case "command_output":
+			return ProtoClineSayType.SAY_COMMAND_OUTPUT
+		case "tool":
+			return ProtoClineSayType.SAY_TOOL
+		case "shell_integration_warning":
+			return ProtoClineSayType.SHELL_INTEGRATION_WARNING
+		case "browser_action_launch":
+			return ProtoClineSayType.SAY_BROWSER_ACTION_LAUNCH
+		case "browser_action":
+			return ProtoClineSayType.BROWSER_ACTION
+		case "browser_action_result":
+			return ProtoClineSayType.BROWSER_ACTION_RESULT
+		case "mcp_server_request_started":
+			return ProtoClineSayType.MCP_SERVER_REQUEST_STARTED
+		case "mcp_server_response":
+			return ProtoClineSayType.MCP_SERVER_RESPONSE
+		case "use_mcp_server":
+			return ProtoClineSayType.SAY_USE_MCP_SERVER
+		case "diff_error":
+			return ProtoClineSayType.DIFF_ERROR
+		case "deleted_api_reqs":
+			return ProtoClineSayType.DELETED_API_REQS
+		case "clineignore_error":
+			return ProtoClineSayType.CLINEIGNORE_ERROR
+		case "checkpoint_created":
+			return ProtoClineSayType.CHECKPOINT_CREATED
+		case "load_mcp_documentation":
+			return ProtoClineSayType.LOAD_MCP_DOCUMENTATION
+		default:
+			return ProtoClineSayType.CLINE_SAY_TYPE_UNSPECIFIED
+	}
 }
 
 // Mapper for ToolUse (internal) to Proto JS Object (ProtoToolUseBlock)
