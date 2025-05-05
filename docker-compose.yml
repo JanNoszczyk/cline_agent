@@ -1,0 +1,43 @@
+version: "3.8" # Specify compose file version
+
+services:
+    # Sandbox client with Cline extension and gRPC bridge
+    sandbox-client:
+        build:
+            context: .
+            dockerfile: sandbox-client/Dockerfile # Points to the new Dockerfile
+        ports:
+            - "3003:3000" # VS Code Server (Host port 3003 maps to internal container port 3000)
+            # Port CLINE_GRPC_PORT (e.g., 50051) is used internally for Go client <-> Extension comms
+            # No host mapping needed unless you need external access to the gRPC server (unlikely)
+        environment:
+            # --- Core Sandbox Settings ---
+            - USER_ID=default-user
+            - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} # Passed to the environment for Cline extension (NEEDS TO BE SET in host or .env)
+            - PASSWORD=password # OpenVSCode Server authentication
+            - CLINE_GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Port Go client uses to connect to Cline (must match Cline setting)
+            - CLINE_GRPC_HOST=127.0.0.1 # Try loopback as a last resort for host
+            - NODE_OPTIONS=--max-old-space-size=4096 # For VSCode server / Node processes
+            - RUN_TEST=true # Set this to true to run the test client
+            # Removed volumes section for simplicity during debug, can be added back if needed
+            # volumes:
+            # Mount workspace if needed for tasks running inside VSCode
+            # - ./workspace:/app/workspace # Removed this conflicting volume mount
+            # Mount necessary build/runtime artifacts (ensure these paths are correct relative to compose file)
+            # entrypoint.sh is now copied and permissioned within the Dockerfile build
+            # Removed volume mount for .vsix file as it's copied during build in Dockerfile
+            # - ./cline-extension.vsix:/tmp/claude-dev.vsix
+        # Entrypoint is defined in the Dockerfile.
+        # The RUN_TEST env variable controls whether entrypoint.sh adds the -test flag.
+        # entrypoint: ["/app/entrypoint.sh"] # Relying on Dockerfile's ENTRYPOINT
+        # Removed custom network configuration to use default bridge
+        # networks:
+        #     - frida-network
+        restart: unless-stopped
+# Removed custom network definition
+# networks:
+#     frida-network:
+#         driver: bridge
+# Define any necessary volumes (if not defined elsewhere)
+# volumes:
+#   some_volume:

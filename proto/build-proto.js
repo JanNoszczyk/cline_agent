@@ -22,15 +22,27 @@ async function main() {
 
 	// Define output directories
 	const TS_OUT_DIR = path.join(ROOT_DIR, "src", "shared", "proto")
+	const GO_OUT_DIR = path.join(ROOT_DIR, "sandbox-client") // Output Go files directly into sandbox-client, protoc will create genproto automatically based on paths
 
 	// Create output directory if it doesn't exist
 	await fs.mkdir(TS_OUT_DIR, { recursive: true })
+	await fs.mkdir(GO_OUT_DIR, { recursive: true }) // Ensure sandbox-client exists
 
 	// Clean up existing generated files
 	console.log(chalk.cyan("Cleaning up existing generated TypeScript files..."))
 	const existingFiles = await globby("**/*.ts", { cwd: TS_OUT_DIR })
 	for (const file of existingFiles) {
 		await fs.unlink(path.join(TS_OUT_DIR, file))
+	}
+
+	// Clean up existing generated Go files (within sandbox-client/genproto)
+	console.log(chalk.cyan("Cleaning up existing generated Go files..."))
+	const goGenProtoDir = path.join(GO_OUT_DIR, "genproto")
+	try {
+		await fs.rm(goGenProtoDir, { recursive: true, force: true })
+		console.log(chalk.cyan(`Removed directory: ${goGenProtoDir}`))
+	} catch (error) {
+		console.warn(chalk.yellow(`Could not remove ${goGenProtoDir} (might not exist): ${error.message}`))
 	}
 
 	// Process all proto files
@@ -59,10 +71,40 @@ async function main() {
 			console.error(chalk.red(`Error generating TypeScript for ${protoFile}:`), error)
 			process.exit(1)
 		}
+
+		// --- Generate Go ---
+		// Assumes protoc-gen-go and protoc-gen-go-grpc are in PATH
+		console.log(chalk.cyan(`  -> Generating Go...`))
+		// Note: Go output needs module-relative paths. Output to sandbox-client,
+		// and use 'module=sandboxclient' option if needed, or ensure paths in proto files are correct.
+		// The paths in the .proto files should ideally not include the module name.
+		// Outputting to GO_OUT_DIR (sandbox-client) should place files in sandbox-client/genproto/...
+		const goProtoCommand = [
+			protoc, // Use the grpc-tools protoc variable
+			`--proto_path="${SCRIPT_DIR}"`, // Where to find imports (.proto files)
+			// Add module option to ensure paths are relative to 'sandboxclient' module root
+			`--go_out="${GO_OUT_DIR}"`,
+			`--go_opt=module=sandboxclient`, // Specify the Go module
+			`--go-grpc_out="${GO_OUT_DIR}"`,
+			`--go-grpc_opt=module=sandboxclient`, // Specify the Go module for gRPC
+			`"${fullProtoPath}"`, // The proto file to process
+		].join(" ")
+
+		try {
+			execSync(goProtoCommand, { stdio: "inherit" })
+		} catch (error) {
+			console.error(chalk.red(`Error generating Go for ${protoFile}:`), error.message)
+			console.error(chalk.yellow("Ensure protoc-gen-go and protoc-gen-go-grpc are installed and in your PATH."))
+			console.error(chalk.yellow("Run: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"))
+			console.error(chalk.yellow("Run: go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest"))
+			process.exit(1)
+		}
 	}
 
 	console.log(chalk.green("Protocol Buffer code generation completed successfully."))
 	console.log(chalk.green(`TypeScript files generated in: ${TS_OUT_DIR}`))
+	// Updated log message to reflect the expected path based on GO_OUT_DIR output and go_package
+	console.log(chalk.green(`Go files should be generated in: ${path.join(GO_OUT_DIR, "genproto")}`))
 
 	// Generate method registration files
 	await generateMethodRegistrations()
