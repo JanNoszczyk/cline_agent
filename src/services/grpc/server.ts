@@ -250,7 +250,8 @@ export function startExternalGrpcServer(
 ): GrpcTaskNotifier | null {
 	try {
 		Logger.info("[External GRPC] Starting startExternalGrpcServer function...")
-		const PROTO_DIR = path.join(extensionPath, "dist", "proto") // Assuming protos are copied to dist/proto during build
+		// Corrected: .proto files are at the extension root, not in dist/
+		const PROTO_DIR = path.join(extensionPath, "proto")
 		if (server) {
 			Logger.warn("[External GRPC] Server instance already exists.")
 			return grpcNotifier

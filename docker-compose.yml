@@ -19,10 +19,11 @@ services:
             - CLINE_GRPC_HOST=127.0.0.1 # Try loopback as a last resort for host
             - NODE_OPTIONS=--max-old-space-size=4096 # For VSCode server / Node processes
             - RUN_TEST=true # Set this to true to run the test client
-            # Removed volumes section for simplicity during debug, can be added back if needed
-            # volumes:
-            # Mount workspace if needed for tasks running inside VSCode
-            # - ./workspace:/app/workspace # Removed this conflicting volume mount
+            # Ensure workspace is mounted and cached for persistence and performance
+        volumes:
+            # Mount local ./workspace to /home/workspace inside the container
+            # Use 'cached' for better performance on macOS/Windows
+            - ./workspace:/home/workspace:cached
             # Mount necessary build/runtime artifacts (ensure these paths are correct relative to compose file)
             # entrypoint.sh is now copied and permissioned within the Dockerfile build
             # Removed volume mount for .vsix file as it's copied during build in Dockerfile

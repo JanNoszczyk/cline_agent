@@ -37,6 +37,7 @@
 *   **Dependencies:** Managed via `package.json` (root) and potentially `proto/package.json`. Use `npm install`.
 *   **Protobuf Compilation:** Requires running the script in `proto/build-proto.js` (e.g., `node proto/build-proto.js` or via an `npm script`) to generate TypeScript code from `.proto` files *before* compiling the main extension TypeScript code.
 *   **TypeScript Compilation:** Uses `tsc` (via `tsconfig.json`) or potentially `esbuild` (as suggested by `esbuild.js` in the root). Check `package.json` scripts for build commands (e.g., `npm run compile`, `npm run build`).
+*   **Updating Sandbox Extension:** After making changes to the core extension code (`src/`), run `bash scripts/update-sandbox-vsix.sh`. This script rebuilds the extension `.vsix` file and copies it to the `sandbox-client/` directory, ensuring the Docker container uses the latest version during the build.
 *   **Running/Debugging:** Typically done via VSCode's "Run and Debug" panel (launch configurations likely in `.vscode/launch.json`).
 
 ## 5. Technical Constraints & Considerations

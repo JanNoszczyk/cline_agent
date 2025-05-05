@@ -117,6 +117,26 @@ const copyWasmFiles = {
 	},
 }
 
+const copyProtoFiles = {
+	name: "copy-proto-files",
+	setup(build) {
+		build.onEnd(() => {
+			const sourceDir = path.join(__dirname, "proto")
+			const targetDir = path.join(__dirname, "dist", "proto")
+
+			// Ensure target directory exists and copy recursively
+			try {
+				fs.mkdirSync(targetDir, { recursive: true })
+				fs.cpSync(sourceDir, targetDir, { recursive: true })
+				console.log("Copied proto files to dist/proto")
+			} catch (err) {
+				console.error("Error copying proto files:", err)
+				// Optionally re-throw or handle error appropriately
+			}
+		})
+	},
+}
+
 const extensionConfig = {
 	bundle: true,
 	minify: production,
@@ -128,6 +148,7 @@ const extensionConfig = {
 	tsconfig: path.resolve(__dirname, "tsconfig.json"),
 	plugins: [
 		copyWasmFiles,
+		copyProtoFiles, // Add the new plugin here
 		aliasResolverPlugin,
 		/* add to the end of plugins array */
 		esbuildProblemMatcherPlugin,

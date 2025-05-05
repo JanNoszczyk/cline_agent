@@ -57,11 +57,9 @@ echo "Starting OpenVSCode Server on port ${VSCODE_INTERNAL_PORT}..."
   --port ${VSCODE_INTERNAL_PORT} \
   --extensions-dir /home/openvscode-server/.openvscode-server/extensions \
   --without-connection-token \
-  --log=trace \
-  --verbose \
-  /home/workspace > /tmp/vscode-server.log 2>&1 & # Redirect stdout and stderr to log file
+  --log=info & # Changed log level to info and removed verbose
 VSCODE_SERVER_PID=$!
-echo "OpenVSCode Server started with PID ${VSCODE_SERVER_PID}, logging to /tmp/vscode-server.log"
+echo "OpenVSCode Server started with PID ${VSCODE_SERVER_PID}, logs will go to container stdout/stderr"
 
 # Wait for VS Code Server port 3000 to be listening
 echo "Waiting for OpenVSCode Server to listen on port ${VSCODE_INTERNAL_PORT}..."

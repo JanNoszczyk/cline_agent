@@ -29,3 +29,6 @@ src/shared/proto/**/*.js
 src/shared/proto/**/*.d.ts
 src/shared/proto/google/
 !src/shared/proto/**/*.proto
+
+
+workspace/
