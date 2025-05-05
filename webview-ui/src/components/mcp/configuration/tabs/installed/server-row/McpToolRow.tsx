@@ -2,7 +2,7 @@ import { VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
 import { McpTool } from "@shared/mcp"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { McpServiceClient } from "@/services/grpc-client"
-import { convertProtoMcpServersToMcpServers } from "@shared/proto-conversions/mcp/mcp-server-conversion"
+import { convertProtoMcpServersToMcpServers } from "@shared/proto-conversions/mcp/mcp-server-conversion-webview"
 
 type McpToolRowProps = {
 	tool: McpTool
@@ -25,11 +25,11 @@ const McpToolRow = ({ tool, serverName }: McpToolRowProps) => {
 			toolNames: [tool.name],
 			autoApprove: !tool.autoApprove,
 		})
-			.then((response) => {
+			.then((response: any) => {
 				const mcpServers = convertProtoMcpServersToMcpServers(response.mcpServers)
 				setMcpServers(mcpServers)
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Error toggling tool auto-approve", error)
 			})
 	}

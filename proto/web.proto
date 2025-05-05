@@ -4,6 +4,8 @@ package cline;
 option java_package = "bot.cline.proto";
 option java_multiple_files = true;
 
+option go_package = "sandboxclient/genproto/web_content";
+
 import "common.proto";
 
 service WebService {

@@ -14,6 +14,7 @@ import { Controller } from "./core/controller"
 import { ErrorService } from "./services/error/ErrorService"
 import { initializeTestMode, cleanupTestMode } from "./services/test/TestMode"
 import { telemetryService } from "./services/posthog/telemetry/TelemetryService"
+import { GrpcBridge } from "./services/grpc/GrpcBridge" // Import GrpcBridge
 
 /*
 Built using https://github.com/microsoft/vscode-webview-ui-toolkit
@@ -29,17 +30,34 @@ let outputChannel: vscode.OutputChannel
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export async function activate(context: vscode.ExtensionContext) {
+	console.log("[DEBUG] Activating extension... (Error throw removed)") // Modified log
+	// throw new Error('[DEBUG THROW] ACTIVATE CALLED'); // Forceful activation check REMOVED
 	outputChannel = vscode.window.createOutputChannel("Cline")
 	context.subscriptions.push(outputChannel)
 
 	ErrorService.initialize()
-	Logger.initialize(outputChannel)
+	Logger.initialize(outputChannel, context) // Pass context here
 	Logger.log("Cline extension activated")
 
 	// Version checking for autoupdate notification
 	const currentVersion = context.extension.packageJSON.version
 	const previousVersion = context.globalState.get<string>("clineVersion")
 	const sidebarWebview = new WebviewProvider(context, outputChannel)
+
+	// --- gRPC Bridge Initialization ---
+	console.log("[DEBUG] Creating GrpcBridge instance...")
+	const grpcBridge = new GrpcBridge(context)
+	context.subscriptions.push(grpcBridge) // Register for disposal
+
+	// Pass the controller instance to the bridge.
+	// GrpcBridge.setController will now wrap the controller's postMessageToWebview method internally.
+	if (sidebarWebview.controller) {
+		grpcBridge.setController(sidebarWebview.controller)
+	} else {
+		// Log an error or handle the case where the controller isn't immediately available
+		Logger.error("[extension.ts] Controller instance not found on WebviewProvider during activation.")
+	}
+	// --- End gRPC Bridge Initialization ---
 
 	// Initialize test mode and add disposables to context
 	context.subscriptions.push(...initializeTestMode(context, sidebarWebview))

@@ -17,9 +17,9 @@ import McpToolRow from "./McpToolRow"
 import McpResourceRow from "./McpResourceRow"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { McpServiceClient } from "@/services/grpc-client"
-import { convertProtoMcpServersToMcpServers } from "@shared/proto-conversions/mcp/mcp-server-conversion"
-import { McpServers, UpdateMcpTimeoutRequest } from "@shared/proto/mcp"
-import { StringRequest } from "@shared/proto/common"
+import { convertProtoMcpServersToMcpServers } from "@shared/proto-conversions/mcp/mcp-server-conversion-webview"
+import { McpServers, UpdateMcpTimeoutRequest } from "@shared/proto_webview_types/mcp"
+import { StringRequest } from "@shared/proto_webview_types/common"
 // constant JSX.Elements
 const TimeoutOptions = [
 	{ value: "30", label: "30 seconds" },
@@ -89,7 +89,7 @@ const ServerRow = ({
 				const mcpServers = convertProtoMcpServersToMcpServers(response.mcpServers)
 				setMcpServers(mcpServers)
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Error updating MCP server timeout", error)
 			})
 	}
@@ -108,7 +108,7 @@ const ServerRow = ({
 				setMcpServers(mcpServers)
 				setIsRestarting(false)
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				// Reset the restarting state
 				setIsRestarting(false)
 				console.error("Error restarting MCP server", error)
@@ -125,7 +125,7 @@ const ServerRow = ({
 				setMcpServers(mcpServers)
 				setIsDeleting(false)
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Error deleting MCP server", error)
 				setIsDeleting(false)
 			})
@@ -139,11 +139,11 @@ const ServerRow = ({
 			toolNames: server.tools?.map((tool) => tool.name) || [],
 			autoApprove: !server.tools?.every((tool) => tool.autoApprove),
 		})
-			.then((response) => {
+			.then((response: any) => {
 				const mcpServers = convertProtoMcpServersToMcpServers(response.mcpServers)
 				setMcpServers(mcpServers)
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Error toggling all tools auto-approve", error)
 			})
 	}
@@ -153,11 +153,11 @@ const ServerRow = ({
 			serverName: server.name,
 			disabled: !server.disabled,
 		})
-			.then((response) => {
+			.then((response: any) => {
 				const mcpServers = convertProtoMcpServersToMcpServers(response.mcpServers)
 				setMcpServers(mcpServers)
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Error toggling MCP server", error)
 			})
 	}

@@ -41,6 +41,7 @@ export default defineConfig({
 		outDir: "build",
 		reportCompressedSize: false,
 		rollupOptions: {
+			external: ["@grpc/grpc-js"], // Prevent bundling of @grpc/grpc-js
 			output: {
 				inlineDynamicImports: true,
 				entryFileNames: `assets/[name].js`,

@@ -1,0 +1,52 @@
+version: "3.8" # Specify compose file version
+
+services:
+    # Sandbox client with Cline extension and gRPC bridge
+    sandbox-client:
+        build:
+            context: .
+            dockerfile: sandbox-client/Dockerfile # Points to the new Dockerfile
+        ports:
+            - "3003:3000" # VS Code Server (Host port 3003 maps to internal container port 3000)
+            # Port CLINE_GRPC_PORT (e.g., 50051) is used internally for Go client <-> Extension comms
+            # No host mapping needed unless you need external access to the gRPC server (unlikely)
+        environment:
+            # --- Core Sandbox Settings ---
+            - USER_ID=default-user
+            - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} # Passed to the environment for Cline extension (NEEDS TO BE SET in host or .env)
+            - ANTHROPIC_MODEL=${ANTHROPIC_MODEL} # Passed from host .env for Cline extension
+            - PASSWORD=password # OpenVSCode Server authentication
+            - CLINE_GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Port Go client uses to connect to Cline (must match Cline setting)
+            # CLINE_GRPC_HOST is no longer needed as communication is intra-container to localhost
+            - NODE_OPTIONS=--max-old-space-size=4096 # For VSCode server / Node processes
+            - RUN_TEST=true # Set this to true to run the test client
+            # Ensure workspace is mounted and cached for persistence and performance
+        volumes:
+            # Mount local ./workspace to /home/workspace inside the container
+            # Use 'cached' for better performance on macOS/Windows
+            - ./workspace:/home/workspace:cached
+            # Mount local ./run_logs to /app/logs for log file persistence
+            # IMPORTANT: Create the ./run_logs directory locally before running 'docker compose up'
+            - ./run_logs:/app/logs:rw
+            # Mount Cline's extension globalStorage (removed as log seems to be in /tmp)
+            # - ./run_logs/cline_extension_logs:/home/openvscode-server/.openvscode-server/data/User/globalStorage/saoudrizwan.claude-dev/:rw
+            # Mount necessary build/runtime artifacts (ensure these paths are correct relative to compose file)
+            # entrypoint.sh is now copied and permissioned within the Dockerfile build
+            # Removed volume mount for .vsix file as it's copied during build in Dockerfile
+            # - ./cline-extension.vsix:/tmp/claude-dev.vsix
+        # Entrypoint is defined in the Dockerfile.
+        # The RUN_TEST env variable controls whether entrypoint.sh adds the -test flag.
+        # entrypoint: ["/app/entrypoint.sh"] # Relying on Dockerfile's ENTRYPOINT
+        # Removed custom network configuration to use default bridge
+        # networks:
+        #     - frida-network
+        stdin_open: true # Keep STDIN open for interactive prompts like 'read'
+        tty: true # Allocate a pseudo-TTY
+        restart: unless-stopped
+# Removed custom network definition
+# networks:
+#     frida-network:
+#         driver: bridge
+# Define any necessary volumes (if not defined elsewhere)
+# volumes:
+#   some_volume:

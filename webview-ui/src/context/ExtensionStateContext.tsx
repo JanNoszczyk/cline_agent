@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, useRef } from "react"
 import { useEvent } from "react-use"
 import { StateServiceClient } from "../services/grpc-client"
-import { EmptyRequest } from "@shared/proto/common"
+import { EmptyRequest } from "@shared/proto_webview_types/common"
 import { DEFAULT_AUTO_APPROVAL_SETTINGS } from "@shared/AutoApprovalSettings"
 import { ExtensionMessage, ExtensionState, DEFAULT_PLATFORM } from "@shared/ExtensionMessage"
 import {

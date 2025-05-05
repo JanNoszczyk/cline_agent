@@ -27,7 +27,7 @@ import {
 import { useMetaKeyDetection, useShortcut } from "@/utils/hooks"
 import { validateApiConfiguration, validateModelId } from "@/utils/validate"
 import { vscode } from "@/utils/vscode"
-import { EmptyRequest } from "@shared/proto/common"
+import { EmptyRequest } from "@shared/proto_webview_types/common"
 import { FileServiceClient, StateServiceClient } from "@/services/grpc-client"
 import { CODE_BLOCK_BG_COLOR } from "@/components/common/CodeBlock"
 import Thumbnails from "@/components/common/Thumbnails"
@@ -317,7 +317,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 		useEffect(() => {
 			if (selectedType === ContextMenuOptionType.Git || /^[a-f0-9]+$/i.test(searchQuery)) {
 				FileServiceClient.searchCommits({ value: searchQuery || "" })
-					.then((response) => {
+					.then((response: any) => {
 						if (response.commits) {
 							const commits: GitCommit[] = response.commits.map(
 								(commit: { hash: string; shortHash: string; subject: string; author: string; date: string }) => ({
@@ -330,7 +330,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 							setGitCommits(commits)
 						}
 					})
-					.catch((error) => {
+					.catch((error: any) => {
 						console.error("Error searching commits:", error)
 					})
 			}
@@ -752,11 +752,11 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 								query: query,
 								mentionsRequestId: query,
 							})
-								.then((results) => {
+								.then((results: any) => {
 									setFileSearchResults(results.results || [])
 									setSearchLoading(false)
 								})
-								.catch((error) => {
+								.catch((error: any) => {
 									console.error("Error searching files:", error)
 									setFileSearchResults([])
 									setSearchLoading(false)
@@ -959,11 +959,11 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			if (!apiValidationResult && !modelIdValidationResult) {
 				vscode.postMessage({ type: "apiConfiguration", apiConfiguration })
 			} else {
-				StateServiceClient.getLatestState(EmptyRequest.create())
+				StateServiceClient.getLatestState({ $type: "cline.EmptyRequest" })
 					.then(() => {
 						console.log("State refreshed")
 					})
-					.catch((error) => {
+					.catch((error: any) => {
 						console.error("Error refreshing state:", error)
 					})
 			}
@@ -1246,12 +1246,12 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				setIntendedCursorPosition(initialCursorPos)
 
 				FileServiceClient.getRelativePaths({ uris: validUris })
-					.then((response) => {
+					.then((response: any) => {
 						if (response.paths.length > 0) {
 							setPendingInsertions((prev) => [...prev, ...response.paths])
 						}
 					})
-					.catch((error) => {
+					.catch((error: any) => {
 						console.error("Error getting relative paths:", error)
 					})
 				return

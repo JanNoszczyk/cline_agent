@@ -10,6 +10,7 @@ import { McpServer, McpMarketplaceCatalog, McpDownloadResponse, McpViewTab } fro
 import { TelemetrySetting } from "./TelemetrySetting"
 import type { BalanceResponse, UsageTransaction, PaymentTransaction } from "../shared/ClineAccount"
 import { ClineRulesToggles } from "./cline-rules"
+import { ToolUse } from "../core/assistant-message" // Added for askPayload
 
 // webview will hold state
 export interface ExtensionMessage {
@@ -160,6 +161,12 @@ export interface ClineMessage {
 	isOperationOutsideWorkspace?: boolean
 	conversationHistoryIndex?: number
 	conversationHistoryDeletedRange?: [number, number] // for when conversation history is truncated for API requests
+	askPayload?: {
+		toolUse?: ToolUse
+		question?: string // For followup
+		options?: string[] // For followup
+		// Add other potential payloads as needed
+	}
 }
 
 export type ClineAsk =
@@ -194,6 +201,7 @@ export type ClineSay =
 	| "command"
 	| "command_output"
 	| "tool"
+	| "tool_code" // Added tool_code here
 	| "shell_integration_warning"
 	| "browser_action_launch"
 	| "browser_action"

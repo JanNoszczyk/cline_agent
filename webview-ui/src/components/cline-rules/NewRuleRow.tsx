@@ -3,7 +3,6 @@ import { vscode } from "@/utils/vscode"
 import { VSCodeButton } from "@vscode/webview-ui-toolkit/react"
 import { useClickAway } from "react-use"
 import { FileServiceClient } from "@/services/grpc-client"
-import { CreateRuleFileRequest } from "@shared/proto-conversions/file/rule-files-conversion"
 
 interface NewRuleRowProps {
 	isGlobal: boolean
@@ -61,13 +60,12 @@ const NewRuleRow: React.FC<NewRuleRowProps> = ({ isGlobal, ruleType }) => {
 			}
 
 			try {
-				await FileServiceClient.createRuleFile(
-					CreateRuleFileRequest.create({
-						isGlobal,
-						filename: finalFilename,
-						type: ruleType || "cline",
-					}),
-				)
+				await FileServiceClient.createRuleFile({
+					$type: "cline.RuleFileRequest",
+					isGlobal,
+					filename: finalFilename,
+					type: ruleType || "cline",
+				})
 			} catch (err) {
 				console.error("Error creating rule file:", err)
 			}

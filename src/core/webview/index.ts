@@ -26,7 +26,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 		private readonly outputChannel: vscode.OutputChannel,
 	) {
 		WebviewProvider.activeInstances.add(this)
-		this.controller = new Controller(context, outputChannel, (message) => this.view?.webview.postMessage(message))
+		this.controller = new Controller(context, outputChannel, (message, _taskId?) => this.view?.webview.postMessage(message))
 	}
 
 	async dispose() {
@@ -60,6 +60,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 	}
 
 	async resolveWebviewView(webviewView: vscode.WebviewView | vscode.WebviewPanel) {
+		console.log("[WebviewProvider] Resolving webview view...")
 		this.view = webviewView
 
 		webviewView.webview.options = {
@@ -68,14 +69,33 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 			localResourceRoots: [this.context.extensionUri],
 		}
 
-		webviewView.webview.html =
-			this.context.extensionMode === vscode.ExtensionMode.Development
-				? await this.getHMRHtmlContent(webviewView.webview)
-				: this.getHtmlContent(webviewView.webview)
+		const isDevMode = this.context.extensionMode === vscode.ExtensionMode.Development
+		console.log(`[WebviewProvider] Extension mode: ${isDevMode ? "Development" : "Production"}`)
+
+		webviewView.webview.html = isDevMode
+			? await this.getHMRHtmlContent(webviewView.webview)
+			: this.getHtmlContent(webviewView.webview)
+
+		console.log("[WebviewProvider] HTML content set, length:", webviewView.webview.html.length)
+
+		// Check if HTML content is actually valid
+		if (webviewView.webview.html.length < 100) {
+			console.error("[WebviewProvider] WARNING: HTML content seems too short!")
+		}
 
 		// Sets up an event listener to listen for messages passed from the webview view context
 		// and executes code based on the message that is received
 		this.setWebviewMessageListener(webviewView.webview)
+		console.log("[WebviewProvider] Message listener attached")
+
+		// Post initial ready message to check if webview is responsive
+		setTimeout(() => {
+			console.log("[WebviewProvider] Sending test message to webview...")
+			this.controller.postMessageToWebview({
+				type: "action",
+				action: "didBecomeVisible",
+			})
+		}, 1000)
 
 		// Logs show up in bottom panel > Debug Console
 		//console.log("registering listener")
@@ -83,10 +103,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 		// Listen for when the panel becomes visible
 		// https://github.com/microsoft/vscode-discussions/discussions/840
 		if ("onDidChangeViewState" in webviewView) {
+			console.log("[WebviewProvider] Setting up onDidChangeViewState listener (panel)")
 			// WebviewView and WebviewPanel have all the same properties except for this visibility listener
 			// panel
 			webviewView.onDidChangeViewState(
 				() => {
+					console.log(`[WebviewProvider] Panel visibility changed: ${this.view?.visible}`)
 					if (this.view?.visible) {
 						this.controller.postMessageToWebview({
 							type: "action",
@@ -98,9 +120,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 				this.disposables,
 			)
 		} else if ("onDidChangeVisibility" in webviewView) {
+			console.log("[WebviewProvider] Setting up onDidChangeVisibility listener (sidebar)")
 			// sidebar
 			webviewView.onDidChangeVisibility(
 				() => {
+					console.log(`[WebviewProvider] Sidebar visibility changed: ${this.view?.visible}`)
 					if (this.view?.visible) {
 						this.controller.postMessageToWebview({
 							type: "action",
@@ -112,6 +136,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 				this.disposables,
 			)
 		}
+
+		console.log("[WebviewProvider] Webview resolution complete")
 
 		// Listen for when the view is disposed
 		// This happens when the user closes the view or when the view is closed programmatically
@@ -171,8 +197,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
 		// The CSS file from the React build output
 		const stylesUri = getUri(webview, this.context.extensionUri, ["webview-ui", "build", "assets", "index.css"])
+		console.log("[WebviewProvider] Styles URI:", stylesUri.toString())
+
 		// The JS file from the React build output
 		const scriptUri = getUri(webview, this.context.extensionUri, ["webview-ui", "build", "assets", "index.js"])
+		console.log("[WebviewProvider] Script URI:", scriptUri.toString())
 
 		// The codicon font from the React build output
 		// https://github.com/microsoft/vscode-extension-samples/blob/main/webview-codicons-sample/src/extension.ts
@@ -228,10 +257,49 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 				<link href="${katexCssUri}" rel="stylesheet" />
 				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src https://*.posthog.com https://*.firebaseauth.com https://*.firebaseio.com https://*.googleapis.com https://*.firebase.com; font-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https: data:; script-src 'nonce-${nonce}' 'unsafe-eval';">
 				<title>Cline</title>
+				<style>
+					/* Ensure basic visibility */
+					body {
+						background-color: var(--vscode-editor-background);
+						color: var(--vscode-editor-foreground);
+						margin: 0;
+						padding: 0;
+						font-family: var(--vscode-font-family);
+					}
+					#root {
+						min-height: 100vh;
+					}
+				</style>
 			</head>
 			<body>
 				<noscript>You need to enable JavaScript to run this app.</noscript>
 				<div id="root"></div>
+				<script nonce="${nonce}">
+					// Debug script to verify webview is loading
+					console.log('[Webview] HTML loaded');
+					console.log('[Webview] Script URI:', '${scriptUri}');
+					console.log('[Webview] Styles URI:', '${stylesUri}');
+					
+					// Add visual debugging
+					const root = document.getElementById('root');
+					if (root) {
+						root.style.minHeight = '100vh';
+						root.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--vscode-foreground);">Loading Cline...</div>';
+					}
+					
+						// DO NOT acquire VS Code API here - let React handle it
+						// The VS Code API can only be acquired once per webview
+						
+						// Check if React mounts after a delay
+						setTimeout(() => {
+							const root = document.getElementById('root');
+							if (root && root.innerHTML.includes('Loading Cline...')) {
+								console.error('[Webview] React app failed to mount after 5 seconds!');
+								root.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--vscode-errorForeground);">Error: React app failed to initialize. Check console for errors.</div>';
+							} else if (root && !root.innerHTML.includes('Loading Cline...')) {
+								console.log('[Webview] React app appears to have mounted');
+							}
+						}, 5000);				</script>
 				<script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 			</body>
 		</html>
@@ -373,8 +441,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 	 * @param webview The webview instance to attach the message listener to
 	 */
 	private setWebviewMessageListener(webview: vscode.Webview) {
+		console.log("[WebviewProvider] Setting up webview message listener...")
 		webview.onDidReceiveMessage(
 			(message) => {
+				console.log("[WebviewProvider] Received message from webview:", message.type || message)
 				this.controller.handleWebviewMessage(message)
 			},
 			null,

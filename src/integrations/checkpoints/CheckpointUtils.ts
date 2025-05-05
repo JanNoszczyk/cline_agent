@@ -50,6 +50,10 @@ export async function getWorkingDirectory(): Promise<string> {
 		throw new Error("No workspace detected. Please open Cline in a workspace to use checkpoints.")
 	}
 
+	// Log the values for debugging
+	console.log(`[CheckpointUtils] os.homedir(): ${os.homedir()}`)
+	console.log(`[CheckpointUtils] vscode.workspace.workspaceFolders[0].uri.fsPath: ${cwd}`)
+
 	// Check if directory exists and we have read permissions
 	try {
 		await access(cwd, constants.R_OK)
@@ -57,6 +61,12 @@ export async function getWorkingDirectory(): Promise<string> {
 		throw new Error(
 			`Cannot access workspace directory. Please ensure VS Code has permission to access your workspace. Error: ${error instanceof Error ? error.message : String(error)}`,
 		)
+	}
+
+	// Specifically allow '/home/workspace' for the sandboxed environment
+	if (cwd === "/home/workspace") {
+		console.log("[CheckpointUtils] Allowing '/home/workspace' for checkpoints in sandboxed environment.")
+		return cwd
 	}
 
 	const homedir = os.homedir()

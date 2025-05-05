@@ -8,8 +8,8 @@ import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react"
 import RulesToggleList from "./RulesToggleList"
 import Tooltip from "@/components/common/Tooltip"
 import styled from "styled-components"
-import { ClineRulesToggles, RefreshedRules, ToggleWindsurfRuleRequest } from "@shared/proto/file"
-import { EmptyRequest } from "@shared/proto/common"
+import { ClineRulesToggles, RefreshedRules, ToggleWindsurfRuleRequest } from "@shared/proto_webview_types/file"
+import { EmptyRequest } from "@shared/proto_webview_types/common"
 
 const ClineRulesToggleModal: React.FC = () => {
 	const {
@@ -58,7 +58,7 @@ const ClineRulesToggleModal: React.FC = () => {
 						setGlobalWorkflowToggles(response.globalWorkflowToggles.toggles)
 					}
 				})
-				.catch((error) => {
+				.catch((error: any) => {
 					console.error("Failed to refresh rules:", error)
 				})
 		}
@@ -97,7 +97,7 @@ const ClineRulesToggleModal: React.FC = () => {
 			rulePath,
 			enabled,
 		})
-			.then((response) => {
+			.then((response: any) => {
 				// Update the local state with the response
 				if (response.globalClineRulesToggles?.toggles) {
 					setGlobalClineRulesToggles(response.globalClineRulesToggles.toggles)
@@ -106,7 +106,7 @@ const ClineRulesToggleModal: React.FC = () => {
 					setLocalClineRulesToggles(response.localClineRulesToggles.toggles)
 				}
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Error toggling Cline rule:", error)
 			})
 	}
@@ -116,13 +116,13 @@ const ClineRulesToggleModal: React.FC = () => {
 			rulePath,
 			enabled,
 		})
-			.then((response) => {
+			.then((response: any) => {
 				// Update the local state with the response
 				if (response.toggles) {
 					setLocalCursorRulesToggles(response.toggles)
 				}
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Error toggling Cursor rule:", error)
 			})
 	}
@@ -137,7 +137,7 @@ const ClineRulesToggleModal: React.FC = () => {
 					setLocalWindsurfRulesToggles(response.toggles)
 				}
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Error toggling Windsurf rule:", error)
 			})
 	}

@@ -43,41 +43,51 @@ async function main() {
 	console.log(chalk.bold.blue("Starting Protocol Buffer code generation..."))
 
 	// Define output directories
-	const TS_OUT_DIR = path.join(ROOT_DIR, "src", "shared", "proto")
+	const TS_OUT_DIR_HOST_GRPC_JS = path.join(ROOT_DIR, "src", "shared", "proto") // For grpc-js backend
+	const TS_OUT_DIR_HOST_GENERIC_DEF = path.join(ROOT_DIR, "src", "shared", "proto_generic_def") // For generic-definitions (webview client helper)
+	const TS_OUT_DIR_WEBVIEW = path.join(ROOT_DIR, "src", "shared", "proto_webview_types")
+	const GO_OUT_DIR = path.join(ROOT_DIR, "sandbox-client") // Output Go files directly into sandbox-client, protoc will create genproto automatically based on paths
 
-	// Create output directory if it doesn't exist
-	await fs.mkdir(TS_OUT_DIR, { recursive: true })
+	// Create output directories if they don't exist
+	await fs.mkdir(TS_OUT_DIR_HOST_GRPC_JS, { recursive: true })
+	await fs.mkdir(TS_OUT_DIR_HOST_GENERIC_DEF, { recursive: true })
+	await fs.mkdir(TS_OUT_DIR_WEBVIEW, { recursive: true })
+	await fs.mkdir(GO_OUT_DIR, { recursive: true }) // Ensure sandbox-client exists
 
 	// Clean up existing generated files
-	console.log(chalk.cyan("Cleaning up existing generated TypeScript files..."))
-	const existingFiles = await globby("**/*.ts", { cwd: TS_OUT_DIR })
-	for (const file of existingFiles) {
-		await fs.unlink(path.join(TS_OUT_DIR, file))
+	console.log(chalk.cyan("Cleaning up existing generated TypeScript files (host grpc-js)..."))
+	const existingHostGrpcJsTsFiles = await globby("**/*.ts", { cwd: TS_OUT_DIR_HOST_GRPC_JS })
+	for (const file of existingHostGrpcJsTsFiles) {
+		await fs.unlink(path.join(TS_OUT_DIR_HOST_GRPC_JS, file))
 	}
 
-	// Check for missing proto files for services in serviceNameMap
-	await ensureProtoFilesExist()
+	console.log(chalk.cyan("Cleaning up existing generated TypeScript files (host generic-def)..."))
+	const existingHostGenericDefTsFiles = await globby("**/*.ts", { cwd: TS_OUT_DIR_HOST_GENERIC_DEF })
+	for (const file of existingHostGenericDefTsFiles) {
+		await fs.unlink(path.join(TS_OUT_DIR_HOST_GENERIC_DEF, file))
+	}
+
+	console.log(chalk.cyan("Cleaning up existing generated TypeScript files (webview)..."))
+	const existingWebviewTsFiles = await globby("**/*.ts", { cwd: TS_OUT_DIR_WEBVIEW })
+	for (const file of existingWebviewTsFiles) {
+		await fs.unlink(path.join(TS_OUT_DIR_WEBVIEW, file))
+	}
+
+	// Clean up existing generated Go files (within sandbox-client/genproto)
+	console.log(chalk.cyan("Cleaning up existing generated Go files..."))
+	const goGenProtoDir = path.join(GO_OUT_DIR, "genproto")
+	try {
+		await fs.rm(goGenProtoDir, { recursive: true, force: true })
+		console.log(chalk.cyan(`Removed directory: ${goGenProtoDir}`))
+	} catch (error) {
+		console.warn(chalk.yellow(`Could not remove ${goGenProtoDir} (might not exist): ${error.message}`))
+	}
 
 	// Process all proto files
 	console.log(chalk.cyan("Processing proto files from"), SCRIPT_DIR)
 	const protoFiles = await globby("*.proto", { cwd: SCRIPT_DIR, realpath: true })
 
-	// Build the protoc command with proper path handling for cross-platform
-	const tsProtocCommand = [
-		protoc,
-		`--proto_path="${SCRIPT_DIR}"`,
-		`--plugin=protoc-gen-ts_proto="${tsProtoPlugin}"`,
-		`--ts_proto_out="${TS_OUT_DIR}"`,
-		"--ts_proto_opt=outputServices=generic-definitions,env=node,esModuleInterop=true,useDate=false,useOptionals=messages",
-		...protoFiles,
-	].join(" ")
-	try {
-		console.log(chalk.cyan(`Generating TypeScript code for:\n${protoFiles.join("\n")}...`))
-		execSync(tsProtocCommand, { stdio: "inherit" })
-	} catch (error) {
-		console.error(chalk.red("Error generating TypeScript for proto files:"), error)
-		process.exit(1)
-	}
+	// REMOVED initial tsProtocCommand block as generation is now per-file in the loop
 
 	const descriptorOutDir = path.join(ROOT_DIR, "dist-standalone", "proto")
 	await fs.mkdir(descriptorOutDir, { recursive: true })
@@ -97,11 +107,139 @@ async function main() {
 		console.error(chalk.red("Error generating descriptor set for proto file:"), error)
 		process.exit(1)
 	}
+	// protoFiles is already defined above
+	const execOptions = { stdio: "inherit" }
+
+	for (const protoFile of protoFiles) {
+		// Generate Host Types (grpc-js for backend)
+		console.log(chalk.cyan(`Generating TypeScript code (host grpc-js) for ${protoFile}...`))
+		const protocCommandHostGrpcJs = [
+			protoc,
+			`--plugin=protoc-gen-ts_proto="${tsProtoPlugin}"`,
+			`--ts_proto_out="${TS_OUT_DIR_HOST_GRPC_JS}"`,
+			"--ts_proto_opt=outputServices=grpc-js,env=node,esModuleInterop=true,useDate=false,useOptionals=messages,useAbortSignal=true,bytes=buffer", // For backend server
+			`--proto_path="${SCRIPT_DIR}"`,
+			`"${path.join(SCRIPT_DIR, protoFile)}"`, // Ensure protoFile is correctly joined with SCRIPT_DIR
+		].join(" ")
+
+		try {
+			execSync(protocCommandHostGrpcJs, execOptions)
+		} catch (error) {
+			console.error(chalk.red(`Error generating TypeScript (host grpc-js) for ${protoFile}:`), error)
+			process.exit(1)
+		}
+
+		// POST-PROCESSING STEP TO FIX DESERIALIZERS in grpc-js outputs
+		const generatedHostGrpcJsFilePath = path.join(TS_OUT_DIR_HOST_GRPC_JS, path.basename(protoFile).replace(".proto", ".ts"))
+		try {
+			let fileContent = await fs.readFile(generatedHostGrpcJsFilePath, "utf8")
+			const requestDeserializeRegex = /requestDeserialize:\s*\(value:\s*Buffer\)\s*=>\s*([a-zA-Z0-9_.]+)\.decode\(value\)/g
+			const responseDeserializeRegex =
+				/responseDeserialize:\s*\(value:\s*Buffer\)\s*=>\s*([a-zA-Z0-9_.]+)\.decode\(value\)/g
+
+			let contentModified = false
+			fileContent = fileContent.replace(requestDeserializeRegex, (match, messageType) => {
+				contentModified = true
+				return `requestDeserialize: (value: Buffer) => ${messageType}.decode(new Uint8Array(value.buffer, value.byteOffset, value.length))`
+			})
+			fileContent = fileContent.replace(responseDeserializeRegex, (match, messageType) => {
+				contentModified = true
+				return `responseDeserialize: (value: Buffer) => ${messageType}.decode(new Uint8Array(value.buffer, value.byteOffset, value.length))`
+			})
+
+			if (contentModified) {
+				await fs.writeFile(generatedHostGrpcJsFilePath, fileContent, "utf8")
+				console.log(chalk.yellow(`Applied Buffer to Uint8Array fix in deserializers for ${generatedHostGrpcJsFilePath}`))
+			}
+		} catch (error) {
+			console.error(chalk.red(`Error post-processing ${generatedHostGrpcJsFilePath} for Buffer fix:`), error)
+			// Consider if this should be a fatal error, for now, it logs and continues
+		}
+
+		// Generate Host Types (generic-definitions for webview client helper)
+		console.log(chalk.cyan(`Generating TypeScript code (host generic-def) for ${protoFile}...`))
+		const protocCommandHostGenericDef = [
+			protoc,
+			`--plugin=protoc-gen-ts_proto="${tsProtoPlugin}"`,
+			`--ts_proto_out="${TS_OUT_DIR_HOST_GENERIC_DEF}"`,
+			"--ts_proto_opt=outputServices=generic-definitions,env=browser,esModuleInterop=true,useDate=false,useOptionals=messages,useAbortSignal=true,bytes=uint8array", // For webview client helper
+			`--proto_path="${SCRIPT_DIR}"`,
+			`"${path.join(SCRIPT_DIR, protoFile)}"`, // Ensure protoFile is correctly joined with SCRIPT_DIR
+		].join(" ")
+
+		try {
+			execSync(protocCommandHostGenericDef, execOptions)
+		} catch (error) {
+			console.error(chalk.red(`Error generating TypeScript (host generic-def) for ${protoFile}:`), error)
+			process.exit(1)
+		}
+
+		console.log(chalk.cyan(`Generating TypeScript code (webview_types) for ${protoFile}...`))
+		const webviewTsProtoOpts = [
+			"outputServices=false",
+			"outputClientImpl=false",
+			"env=browser",
+			"esModuleInterop=false", // Changed
+			"useDate=false",
+			"useOptionals=messages",
+			// "useAbortSignal=true", // Typically for client stubs, may not be needed for types only
+			"forceLong=string",
+			"outputJsonMethods=false", // Already false, keep
+			"outputPartialMethods=false", // Already false, keep
+			"outputTypeAnnotations=true", // Already true, keep
+			"outputIndex=false", // Already false, keep
+			"initializeFieldsAsUndefined=true", // New: leaner constructors
+			"exportCommonSymbols=false", // New: reduce re-exports
+			"unknownFields=false", // New: strip unknown field handling
+			"usePrototypeForDefaults=true", // New: potentially leaner/more tree-shakable
+		].join(",")
+
+		const protocCommandWebview = [
+			protoc,
+			`--plugin=protoc-gen-ts_proto="${tsProtoPlugin}"`,
+			`--ts_proto_out="${TS_OUT_DIR_WEBVIEW}"`,
+			`--ts_proto_opt=${webviewTsProtoOpts}`,
+			`--proto_path="${SCRIPT_DIR}"`,
+			`"${path.join(SCRIPT_DIR, protoFile)}"`,
+		].join(" ")
+
+		try {
+			execSync(protocCommandWebview, execOptions)
+		} catch (error) {
+			console.error(chalk.red(`Error generating TypeScript (webview_types) for ${protoFile}:`), error)
+			process.exit(1)
+		}
+
+		// --- Generate Go ---
+		console.log(chalk.cyan(`  -> Generating Go for ${protoFile}...`))
+		const goProtoCommand = [
+			protoc,
+			`--proto_path="${SCRIPT_DIR}"`,
+			`--go_out="${GO_OUT_DIR}"`,
+			`--go_opt=module=sandboxclient`,
+			`--go-grpc_out="${GO_OUT_DIR}"`,
+			`--go-grpc_opt=module=sandboxclient`,
+			`"${path.join(SCRIPT_DIR, protoFile)}"`,
+		].join(" ")
+
+		try {
+			execSync(goProtoCommand, execOptions)
+		} catch (error) {
+			console.error(chalk.red(`Error generating Go for ${protoFile}:`), error.message)
+			console.error(chalk.yellow("Ensure protoc-gen-go and protoc-gen-go-grpc are installed and in your PATH."))
+			console.error(chalk.yellow("Run: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"))
+			console.error(chalk.yellow("Run: go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest"))
+			process.exit(1)
+		}
+	}
 
 	console.log(chalk.green("Protocol Buffer code generation completed successfully."))
-	console.log(chalk.green(`TypeScript files generated in: ${TS_OUT_DIR}`))
+	console.log(chalk.green(`TypeScript (host grpc-js) files generated in: ${TS_OUT_DIR_HOST_GRPC_JS}`))
+	console.log(chalk.green(`TypeScript (host generic-def) files generated in: ${TS_OUT_DIR_HOST_GENERIC_DEF}`))
+	console.log(chalk.green(`TypeScript (webview_types) files generated in: ${TS_OUT_DIR_WEBVIEW}`))
+	console.log(chalk.green(`Go files should be generated in: ${path.join(GO_OUT_DIR, "genproto")}`))
 
-	await generateMethodRegistrations()
+	await generateMethodRegistrations(protoFiles) // Pass protoFiles
 	await generateServiceConfig()
 	await generateGrpcClientConfig()
 }
@@ -122,7 +260,7 @@ async function generateGrpcClientConfig() {
 		const capitalizedName = dirName.charAt(0).toUpperCase() + dirName.slice(1)
 
 		// Add import statement
-		serviceImports.push(`import { ${capitalizedName}ServiceDefinition } from "@shared/proto/${dirName}"`)
+		serviceImports.push(`import { ${capitalizedName}ServiceDefinition } from "@shared/proto_generic_def/${dirName}"`) // Updated path
 
 		// Add client creation
 		serviceClientCreations.push(
@@ -157,6 +295,7 @@ export {
  * @param scriptDir Directory containing proto files
  * @returns Map of service names to their streaming methods
  */
+// protoFiles is passed as an argument
 async function parseProtoForStreamingMethods(protoFiles, scriptDir) {
 	console.log(chalk.cyan("Parsing proto files for streaming methods..."))
 
@@ -209,11 +348,11 @@ async function parseProtoForStreamingMethods(protoFiles, scriptDir) {
 	return streamingMethodsMap
 }
 
-async function generateMethodRegistrations() {
+async function generateMethodRegistrations(protoFiles) {
+	// Receive protoFiles
 	console.log(chalk.cyan("Generating method registration files..."))
 
 	// Parse proto files for streaming methods
-	const protoFiles = await globby("*.proto", { cwd: SCRIPT_DIR })
 	const streamingMethodsMap = await parseProtoForStreamingMethods(protoFiles, SCRIPT_DIR)
 
 	for (const serviceDir of serviceDirs) {
@@ -410,12 +549,12 @@ service ${serviceClassName} {
 //   string stringField = 2;
 //   int32 int32Field = 3;
 // }
-`
+` // Corrected closing backtick
 
 			// Write the template proto file
-			const protoFilePath = path.join(SCRIPT_DIR, `${serviceName}.proto`)
+			const protoFilePath = path.join(SCRIPT_DIR, `${serviceName}.proto`) // Corrected template literal
 			await fs.writeFile(protoFilePath, protoContent)
-			console.log(chalk.green(`Created template proto file at ${protoFilePath}`))
+			console.log(chalk.green(`Created template proto file at ${protoFilePath}`)) // Corrected template literal
 		}
 	}
 }

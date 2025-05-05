@@ -2,7 +2,7 @@ import React, { useState } from "react"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { StateServiceClient } from "@/services/grpc-client"
-import { Int64, Int64Request } from "@shared/proto/common"
+import { Int64, Int64Request } from "@shared/proto_webview_types/common"
 
 export const TerminalSettingsSection: React.FC = () => {
 	const { shellIntegrationTimeout, setShellIntegrationTimeout } = useExtensionState()
@@ -29,13 +29,15 @@ export const TerminalSettingsSection: React.FC = () => {
 
 		// Send to extension using gRPC
 		StateServiceClient.updateTerminalConnectionTimeout({
-			value: timeout,
-		} as Int64Request)
+			$type: "cline.Int64Request",
+			value: timeout.toString(),
+		})
 			.then((response: Int64) => {
-				setShellIntegrationTimeout(response.value)
-				setInputValue((response.value / 1000).toString())
+				const timeoutValue = parseInt(response.value)
+				setShellIntegrationTimeout(timeoutValue)
+				setInputValue((timeoutValue / 1000).toString())
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error("Failed to update terminal connection timeout:", error)
 			})
 	}

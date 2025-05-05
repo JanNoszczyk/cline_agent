@@ -106,6 +106,10 @@ export class McpHub {
 		this.getSettingsDirectoryPath = getSettingsDirectoryPath
 		this.postMessageToWebview = postMessageToWebview
 		this.clientVersion = clientVersion
+		// Don't initialize immediately - wait for webview to be ready
+	}
+
+	async initialize() {
 		this.watchMcpSettingsFile()
 		this.initializeMcpServers()
 	}
@@ -368,6 +372,7 @@ export class McpHub {
 					config: JSON.stringify(config),
 					status: "connecting",
 					disabled: config.disabled,
+					timeout: config.timeout, // Ensure timeout from config is set on the McpServer object
 				},
 				client,
 				transport,
@@ -922,27 +927,41 @@ export class McpHub {
 				throw new Error(`Invalid server URL: ${serverUrl}. Please provide a valid URL.`)
 			}
 
-			const serverConfig = {
-				url: serverUrl,
-				disabled: false,
-				autoApprove: [],
+			let inferredTransportType: McpTransportType
+			// Infer transportType from serverUrl
+			// z.string().url() has already validated serverUrl earlier in this function
+			const urlObj = new URL(serverUrl)
+			if (urlObj.pathname.toLowerCase().includes("sse")) {
+				inferredTransportType = "sse"
+			} else if (serverUrl.startsWith("http://") || serverUrl.startsWith("https://")) {
+				inferredTransportType = "http"
+			} else {
+				// Should not be reached if serverUrl is a valid HTTP/HTTPS URL
+				// and this function is for adding remote (URL-based) servers.
+				throw new Error(`Could not determine transport type for remote server URL: ${serverUrl}`)
 			}
 
-			const parsedConfig = ServerConfigSchema.parse(serverConfig)
+			const serverConfigToSaveAndParse = {
+				url: serverUrl,
+				disabled: false, // Default for new remote servers
+				autoApprove: [], // Default for new remote servers
+				timeout: DEFAULT_MCP_TIMEOUT_SECONDS, // Explicitly set default timeout
+				transportType: inferredTransportType,
+			}
 
-			settings.mcpServers[serverName] = parsedConfig
+			// This parse call will now succeed as transportType is present
+			const parsedConfig = ServerConfigSchema.parse(serverConfigToSaveAndParse)
+
+			// Update the settings object with the new server configuration (including transportType)
+			settings.mcpServers[serverName] = serverConfigToSaveAndParse
+
 			const settingsPath = await this.getMcpSettingsFilePath()
 
-			// We don't write the zod-transformed version to the file.
-			// The above parse() call adds the transportType field to the server config
-			// It would be fine if this was written, but we don't want to clutter up the file with internal details
+			// Write the updated settings (which includes the new server with its transportType) to the file
+			await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2))
 
-			// ToDo: We could benefit from input / output types reflecting the non-transformed / transformed versions
-			await fs.writeFile(
-				settingsPath,
-				JSON.stringify({ mcpServers: { ...settings.mcpServers, [serverName]: serverConfig } }, null, 2),
-			)
-
+			// updateServerConnectionsRPC will use the updated settings.mcpServers,
+			// ensuring connectToServer receives the config with transportType.
 			await this.updateServerConnectionsRPC(settings.mcpServers)
 
 			const serverOrder = Object.keys(settings.mcpServers || {})

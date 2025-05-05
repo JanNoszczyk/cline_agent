@@ -6,6 +6,7 @@ import { setTimeout as setTimeoutPromise } from "node:timers/promises"
 import pWaitFor from "p-wait-for"
 import * as path from "path"
 import * as vscode from "vscode"
+import { Logger } from "@services/logging/Logger" // Added import
 import { handleGrpcRequest, handleGrpcRequestCancel } from "./grpc-handler"
 import { handleModelsServiceRequest } from "./models"
 import { EmptyRequest } from "@shared/proto/common"
@@ -63,7 +64,7 @@ https://github.com/KumarVariable/vscode-extension-sidebar-html/blob/master/src/c
 */
 
 export class Controller {
-	private postMessage: (message: ExtensionMessage) => Thenable<boolean> | undefined
+	private postMessage: (message: ExtensionMessage, taskId?: string) => Thenable<boolean> | undefined
 
 	private disposables: vscode.Disposable[] = []
 	task?: Task
@@ -75,7 +76,7 @@ export class Controller {
 	constructor(
 		readonly context: vscode.ExtensionContext,
 		private readonly outputChannel: vscode.OutputChannel,
-		postMessage: (message: ExtensionMessage) => Thenable<boolean> | undefined,
+		postMessage: (message: ExtensionMessage, taskId?: string) => Thenable<boolean> | undefined,
 	) {
 		this.outputChannel.appendLine("ClineProvider instantiated")
 		this.postMessage = postMessage
@@ -174,8 +175,8 @@ export class Controller {
 			this.mcpHub,
 			this.workspaceTracker,
 			(historyItem) => this.updateTaskHistory(historyItem),
-			() => this.postStateToWebview(),
-			(message) => this.postMessageToWebview(message),
+			(taskId?: string) => this.postStateToWebview(taskId),
+			(message, taskId) => this.postMessageToWebview(message, taskId), // Pass taskId here
 			(taskId) => this.reinitExistingTaskFromId(taskId),
 			() => this.cancelTask(),
 			apiConfiguration,
@@ -189,6 +190,33 @@ export class Controller {
 			images,
 			historyItem,
 		)
+		// Return the created task instance
+		return this.task
+	}
+
+	async resumeLatestTaskFromHistory(): Promise<void> {
+		const taskHistory = ((await getGlobalState(this.context, "taskHistory")) as HistoryItem[] | undefined) || []
+		if (taskHistory.length === 0) {
+			console.warn("No task history found to resume from.")
+			// Optionally, inform the gRPC client or handle as an error
+			return
+		}
+
+		// Sort by timestamp descending to get the latest task
+		const sortedHistory = [...taskHistory].sort((a, b) => b.ts - a.ts)
+		const latestTaskItem = sortedHistory[0]
+
+		if (latestTaskItem && latestTaskItem.id) {
+			Logger.info(`[Controller] Resuming latest task from history: ${latestTaskItem.id}`)
+			await this.reinitExistingTaskFromId(latestTaskItem.id)
+		} else {
+			console.warn("Could not determine the latest task from history.")
+			// Optionally, inform the gRPC client or handle as an error
+		}
+	}
+
+	async getTaskHistory(): Promise<HistoryItem[]> {
+		return ((await getGlobalState(this.context, "taskHistory")) as HistoryItem[] | undefined) || []
 	}
 
 	async reinitExistingTaskFromId(taskId: string) {
@@ -198,9 +226,11 @@ export class Controller {
 		}
 	}
 
-	// Send any JSON serializable data to the react app
-	async postMessageToWebview(message: ExtensionMessage) {
-		await this.postMessage(message)
+	// Send any JSON serializable data to the react app, optionally specifying the originating taskId
+	async postMessageToWebview(message: ExtensionMessage, taskId?: string) {
+		Logger.debug(`[CONTROLLER_TRACE:postMessageToWebview] Posting message type '${message.type}' with taskId '${taskId}'`) // Added log
+		// The postMessage function has been wrapped by GrpcBridge to accept taskId
+		await this.postMessage(message, taskId)
 	}
 
 	/**
@@ -216,37 +246,45 @@ export class Controller {
 				await this.postStateToWebview()
 				break
 			case "webviewDidLaunch":
-				this.postStateToWebview()
-				this.workspaceTracker?.populateFilePaths() // don't await
-				getTheme().then((theme) =>
-					this.postMessageToWebview({
-						type: "theme",
-						text: JSON.stringify(theme),
-					}),
-				)
-				// post last cached models in case the call to endpoint fails
-				this.readOpenRouterModels().then((openRouterModels) => {
-					if (openRouterModels) {
+				// Add a small delay to ensure React app has mounted and registered its message handler
+				setTimeout(async () => {
+					// Initialize MCP Hub now that webview is ready
+					await this.mcpHub.initialize()
+					await this.postStateToWebview()
+					this.workspaceTracker?.populateFilePaths() // don't await
+					getTheme().then((theme) =>
 						this.postMessageToWebview({
-							type: "openRouterModels",
-							openRouterModels,
-						})
-					}
-				})
-				// gui relies on model info to be up-to-date to provide the most accurate pricing, so we need to fetch the latest details on launch.
-				// we do this for all users since many users switch between api providers and if they were to switch back to openrouter it would be showing outdated model info if we hadn't retrieved the latest at this point
-				// (see normalizeApiConfiguration > openrouter)
-				// Prefetch marketplace and OpenRouter models
+							type: "theme",
+							text: JSON.stringify(theme),
+						}),
+					)
+				}, 500)
+				// Also delay other initial messages to ensure React app is ready
+				setTimeout(() => {
+					// post last cached models in case the call to endpoint fails
+					this.readOpenRouterModels().then((openRouterModels) => {
+						if (openRouterModels) {
+							this.postMessageToWebview({
+								type: "openRouterModels",
+								openRouterModels,
+							})
+						}
+					})
+					// gui relies on model info to be up-to-date to provide the most accurate pricing, so we need to fetch the latest details on launch.
+					// we do this for all users since many users switch between api providers and if they were to switch back to openrouter it would be showing outdated model info if we hadn't retrieved the latest at this point
+					// (see normalizeApiConfiguration > openrouter)
+					// Prefetch marketplace and OpenRouter models
 
-				getGlobalState(this.context, "mcpMarketplaceCatalog").then((mcpMarketplaceCatalog) => {
-					if (mcpMarketplaceCatalog) {
-						this.postMessageToWebview({
-							type: "mcpMarketplaceCatalog",
-							mcpMarketplaceCatalog: mcpMarketplaceCatalog as McpMarketplaceCatalog,
-						})
-					}
-				})
-				this.silentlyRefreshMcpMarketplace()
+					getGlobalState(this.context, "mcpMarketplaceCatalog").then((mcpMarketplaceCatalog) => {
+						if (mcpMarketplaceCatalog) {
+							this.postMessageToWebview({
+								type: "mcpMarketplaceCatalog",
+								mcpMarketplaceCatalog: mcpMarketplaceCatalog as McpMarketplaceCatalog,
+							})
+						}
+					})
+					this.silentlyRefreshMcpMarketplace()
+				}, 600)
 				handleModelsServiceRequest(this, "refreshOpenRouterModels", EmptyRequest.create()).then(async (response) => {
 					if (response && response.models) {
 						// update model info in state (this needs to be done here since we don't want to update state while settings is open, and we may refresh models there)
@@ -1207,11 +1245,11 @@ export class Controller {
 		return updatedTaskHistory
 	}
 
-	async postStateToWebview() {
+	async postStateToWebview(taskId?: string) {
 		const state = await this.getStateToPostToWebview()
 		// For testing: Bypass gRPC stream and send state directly
 		console.log("[Controller Test Revert] Posting full state via direct 'state' message.")
-		await this.postMessageToWebview({ type: "state", state: state })
+		await this.postMessageToWebview({ type: "state", state: state }, taskId)
 		// await sendStateUpdate(state) // Original line for the GrPC stream
 	}
 

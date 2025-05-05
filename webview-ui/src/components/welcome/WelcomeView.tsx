@@ -6,7 +6,7 @@ import { vscode } from "@/utils/vscode"
 import ApiOptions from "@/components/settings/ApiOptions"
 import ClineLogoWhite from "@/assets/ClineLogoWhite"
 import { AccountServiceClient } from "@/services/grpc-client"
-import { EmptyRequest } from "@shared/proto/common"
+import { EmptyRequest } from "@shared/proto_webview_types/common"
 
 const WelcomeView = memo(() => {
 	const { apiConfiguration } = useExtensionState()
@@ -16,7 +16,7 @@ const WelcomeView = memo(() => {
 	const disableLetsGoButton = apiErrorMessage != null
 
 	const handleLogin = () => {
-		AccountServiceClient.accountLoginClicked(EmptyRequest.create()).catch((err) =>
+		AccountServiceClient.accountLoginClicked({ $type: "cline.EmptyRequest" }).catch((err) =>
 			console.error("Failed to get login URL:", err),
 		)
 	}

@@ -40,9 +40,7 @@
 		"llama"
 	],
 	"activationEvents": [
-		"onLanguage",
-		"onStartupFinished",
-		"workspaceContains:evals.env"
+		"*"
 	],
 	"main": "./dist/extension.js",
 	"contributes": {
@@ -294,6 +292,8 @@
 		"test:unit": "TS_NODE_PROJECT='./tsconfig.unit-test.json' mocha",
 		"test:coverage": "vscode-test --coverage",
 		"install:all": "npm install && cd webview-ui && npm install",
+		"build": "node esbuild.js --production",
+		"dev": "node esbuild.js --watch",
 		"dev:webview": "cd webview-ui && npm run dev",
 		"build:webview": "cd webview-ui && npm run build",
 		"test:webview": "cd webview-ui && npm run test",
@@ -313,6 +313,7 @@
 		"@types/clone-deep": "^4.0.4",
 		"@types/diff": "^5.2.1",
 		"@types/get-folder-size": "^3.0.4",
+		"@types/google-protobuf": "^3.15.12",
 		"@types/mocha": "^10.0.7",
 		"@types/node": "20.x",
 		"@types/pdf-parse": "^1.1.4",
@@ -377,6 +378,7 @@
 		"fzf": "^0.5.2",
 		"get-folder-size": "^5.0.0",
 		"globby": "^14.0.2",
+		"google-protobuf": "^3.21.4",
 		"grpc-health-check": "^2.0.2",
 		"iconv-lite": "^0.6.3",
 		"ignore": "^7.0.3",
@@ -401,6 +403,7 @@
 		"strip-ansi": "^7.1.0",
 		"tree-sitter-wasms": "^0.1.11",
 		"ts-morph": "^25.0.1",
+		"tslib": "^2.6.3",
 		"turndown": "^7.2.0",
 		"web-tree-sitter": "^0.22.6",
 		"zod": "^3.24.2"

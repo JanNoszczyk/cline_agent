@@ -2,6 +2,7 @@ import { Anthropic } from "@anthropic-ai/sdk"
 import cloneDeep from "clone-deep"
 import { execa } from "execa"
 import getFolderSize from "get-folder-size"
+import { EventEmitter } from "events"
 import { setTimeout as setTimeoutPromise } from "node:timers/promises"
 import os from "os"
 import pTimeout from "p-timeout"
@@ -25,7 +26,7 @@ import { BrowserSession } from "@services/browser/BrowserSession"
 import { UrlContentFetcher } from "@services/browser/UrlContentFetcher"
 import { listFiles } from "@services/glob/list-files"
 import { regexSearchFiles } from "@services/ripgrep"
-import { telemetryService } from "@/services/posthog/telemetry/TelemetryService"
+import { telemetryService } from "@services/posthog/telemetry/TelemetryService"
 import { parseSourceCodeForDefinitionsTopLevel } from "@services/tree-sitter"
 import { ApiConfiguration } from "@shared/api"
 import { findLast, findLastIndex, parsePartialArrayString } from "@shared/array"
@@ -101,12 +102,12 @@ import { parseSlashCommands } from "@core/slash-commands"
 import WorkspaceTracker from "@integrations/workspace/WorkspaceTracker"
 import { McpHub } from "@services/mcp/McpHub"
 import { isInTestMode } from "../../services/test/TestMode"
-import { featureFlagsService } from "@/services/posthog/feature-flags/FeatureFlagsService"
+import { featureFlagsService } from "@services/posthog/feature-flags/FeatureFlagsService"
 
 export const cwd =
 	vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).at(0) ?? path.join(os.homedir(), "Desktop") // may or may not exist but fs checking existence would immediately ask for permission which would be bad UX, need to come up with a better solution
 
-type ToolResponse = string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>
+export type ToolResponse = string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>
 type UserContent = Array<Anthropic.ContentBlockParam>
 
 export class Task {
@@ -115,10 +116,11 @@ export class Task {
 	private mcpHub: McpHub
 	private workspaceTracker: WorkspaceTracker
 	private updateTaskHistory: (historyItem: HistoryItem) => Promise<HistoryItem[]>
-	private postStateToWebview: () => Promise<void>
-	private postMessageToWebview: (message: ExtensionMessage) => Promise<void>
+	private postStateToWebview: (taskId?: string) => Promise<void>
+	private postMessageToWebview: (message: ExtensionMessage, taskId?: string) => Promise<void>
 	private reinitExistingTaskFromId: (taskId: string) => Promise<void>
 	private cancelTask: () => Promise<void>
+	private _emitter: EventEmitter
 
 	readonly taskId: string
 	private taskIsFavorited?: boolean
@@ -151,6 +153,7 @@ export class Task {
 	isInitialized = false
 	isAwaitingPlanResponse = false
 	didRespondToPlanAskBySwitchingMode = false
+	public isDisposed = false // Added for gRPC bridge
 
 	// Metadata tracking
 	private fileContextTracker: FileContextTracker
@@ -176,8 +179,8 @@ export class Task {
 		mcpHub: McpHub,
 		workspaceTracker: WorkspaceTracker,
 		updateTaskHistory: (historyItem: HistoryItem) => Promise<HistoryItem[]>,
-		postStateToWebview: () => Promise<void>,
-		postMessageToWebview: (message: ExtensionMessage) => Promise<void>,
+		postStateToWebview: (taskId?: string) => Promise<void>,
+		postMessageToWebview: (message: ExtensionMessage, taskId?: string) => Promise<void>,
 		reinitExistingTaskFromId: (taskId: string) => Promise<void>,
 		cancelTask: () => Promise<void>,
 		apiConfiguration: ApiConfiguration,
@@ -212,6 +215,7 @@ export class Task {
 		this.browserSettings = browserSettings
 		this.chatSettings = chatSettings
 		this.enableCheckpoints = enableCheckpointsSetting
+		this._emitter = new EventEmitter()
 
 		// Initialize taskId first
 		if (historyItem) {
@@ -403,7 +407,7 @@ export class Task {
 						const errorMessage = error instanceof Error ? error.message : "Unknown error"
 						console.error("Failed to initialize checkpoint tracker:", errorMessage)
 						this.checkpointTrackerErrorMessage = errorMessage
-						await this.postStateToWebview()
+						await this.postStateToWebview(this.taskId)
 						vscode.window.showErrorMessage(errorMessage)
 						didWorkspaceRestoreFail = true
 					}
@@ -493,17 +497,22 @@ export class Task {
 
 			await this.saveClineMessagesAndUpdateHistory()
 
-			await this.postMessageToWebview({ type: "relinquishControl" })
+			await this.postMessageToWebview({ type: "relinquishControl" }, this.taskId)
 
 			this.cancelTask() // the task is already cancelled by the provider beforehand, but we need to re-init to get the updated messages
 		} else {
-			await this.postMessageToWebview({ type: "relinquishControl" })
+			await this.postMessageToWebview({ type: "relinquishControl" }, this.taskId)
 		}
 	}
 
 	async presentMultifileDiff(messageTs: number, seeNewChangesSinceLastTaskCompletion: boolean) {
 		const relinquishButton = () => {
-			this.postMessageToWebview({ type: "relinquishControl" })
+			this.postMessageToWebview({ type: "relinquishControl" }, this.taskId)
+		}
+		if (!this.enableCheckpoints) {
+			vscode.window.showInformationMessage("Checkpoints are disabled in settings. Cannot show diff.")
+			relinquishButton()
+			return
 		}
 		if (!this.enableCheckpoints) {
 			vscode.window.showInformationMessage("Checkpoints are disabled in settings. Cannot show diff.")
@@ -538,7 +547,7 @@ export class Task {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error"
 				console.error("Failed to initialize checkpoint tracker:", errorMessage)
 				this.checkpointTrackerErrorMessage = errorMessage
-				await this.postStateToWebview()
+				await this.postStateToWebview(this.taskId)
 				vscode.window.showErrorMessage(errorMessage)
 				relinquishButton()
 				return
@@ -725,10 +734,13 @@ export class Task {
 					// todo be more efficient about saving and posting only new data or one whole message at a time so ignore partial for saves, and only post parts of partial message instead of whole array in new listener
 					// await this.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
-					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
-					})
+					await this.postMessageToWebview(
+						{
+							type: "partialMessage",
+							partialMessage: lastMessage,
+						},
+						this.taskId,
+					) // Pass taskId
 					throw new Error("Current ask promise was ignored 1")
 				} else {
 					// this is a new partial message, so add it with partial state
@@ -744,7 +756,7 @@ export class Task {
 						text,
 						partial,
 					})
-					await this.postStateToWebview()
+					await this.postStateToWebview(this.taskId)
 					throw new Error("Current ask promise was ignored 2")
 				}
 			} else {
@@ -768,10 +780,13 @@ export class Task {
 					lastMessage.partial = false
 					await this.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
-					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
-					})
+					await this.postMessageToWebview(
+						{
+							type: "partialMessage",
+							partialMessage: lastMessage,
+						},
+						this.taskId,
+					)
 				} else {
 					// this is a new partial=false message, so add it like normal
 					this.askResponse = undefined
@@ -785,7 +800,7 @@ export class Task {
 						ask: type,
 						text,
 					})
-					await this.postStateToWebview()
+					await this.postStateToWebview(this.taskId)
 				}
 			}
 		} else {
@@ -802,7 +817,7 @@ export class Task {
 				ask: type,
 				text,
 			})
-			await this.postStateToWebview()
+			await this.postStateToWebview(this.taskId)
 		}
 
 		await pWaitFor(() => this.askResponse !== undefined || this.lastMessageTs !== askTs, { interval: 100 })
@@ -841,10 +856,13 @@ export class Task {
 					lastMessage.text = text
 					lastMessage.images = images
 					lastMessage.partial = partial
-					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
-					})
+					await this.postMessageToWebview(
+						{
+							type: "partialMessage",
+							partialMessage: lastMessage,
+						},
+						this.taskId,
+					)
 				} else {
 					// this is a new partial message, so add it with partial state
 					const sayTs = Date.now()
@@ -857,7 +875,7 @@ export class Task {
 						images,
 						partial,
 					})
-					await this.postStateToWebview()
+					await this.postStateToWebview(this.taskId)
 				}
 			} else {
 				// partial=false means its a complete version of a previously partial message
@@ -872,10 +890,13 @@ export class Task {
 					// instead of streaming partialMessage events, we do a save and post like normal to persist to disk
 					await this.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
-					await this.postMessageToWebview({
-						type: "partialMessage",
-						partialMessage: lastMessage,
-					}) // more performant than an entire postStateToWebview
+					await this.postMessageToWebview(
+						{
+							type: "partialMessage",
+							partialMessage: lastMessage,
+						},
+						this.taskId,
+					) // more performant than an entire postStateToWebview
 				} else {
 					// this is a new partial=false message, so add it like normal
 					const sayTs = Date.now()
@@ -887,7 +908,7 @@ export class Task {
 						text,
 						images,
 					})
-					await this.postStateToWebview()
+					await this.postStateToWebview(this.taskId)
 				}
 			}
 		} else {
@@ -901,7 +922,7 @@ export class Task {
 				text,
 				images,
 			})
-			await this.postStateToWebview()
+			await this.postStateToWebview(this.taskId)
 		}
 	}
 
@@ -920,7 +941,7 @@ export class Task {
 		if (lastMessage?.partial && lastMessage.type === type && (lastMessage.ask === askOrSay || lastMessage.say === askOrSay)) {
 			this.clineMessages.pop()
 			await this.saveClineMessagesAndUpdateHistory()
-			await this.postStateToWebview()
+			await this.postStateToWebview(this.taskId)
 		}
 	}
 
@@ -938,7 +959,7 @@ export class Task {
 		this.clineMessages = []
 		this.apiConversationHistory = []
 
-		await this.postStateToWebview()
+		await this.postStateToWebview(this.taskId)
 
 		await this.say("text", task, images)
 
@@ -1141,12 +1162,21 @@ export class Task {
 
 	async abortTask() {
 		this.abort = true // will stop any autonomously running promises
+		this.isDisposed = true // Set before emitting dispose
 		this.terminalManager.disposeAll()
 		this.urlContentFetcher.closeBrowser()
 		await this.browserSession.dispose()
 		this.clineIgnoreController.dispose()
 		this.fileContextTracker.dispose()
 		await this.diffViewProvider.revertChanges() // need to await for when we want to make sure directories/files are reverted before re-starting the task from a checkpoint
+
+		// Notify listeners that this task instance is disposed
+		this._emitter.emit("dispose")
+	}
+
+	// Public method to subscribe to the dispose event
+	public onDispose(listener: () => void): void {
+		this._emitter.on("dispose", listener)
 	}
 
 	// Checkpoints
@@ -1803,6 +1833,26 @@ export class Task {
 				break
 			}
 			case "tool_use":
+				// If the tool_use block itself is partial and the AI stream hasn't ended,
+				// we should wait for it to be complete before trying to execute it or ask for approval.
+				if (block.partial && !this.didCompleteReadingStream) {
+					Logger.debug(
+						`[Task:presentAssistantMessage] Tool use block '${block.name}' is partial. Waiting for completion.`,
+					)
+					// Do nothing here for this block in this iteration.
+					// Let parseAssistantMessageV2 accumulate more data from the stream.
+					// Subsequent calls to presentAssistantMessage will re-evaluate this block.
+					break
+				}
+				// If the stream has ended and the block is still marked as partial,
+				// or if the block was never partial, we proceed to process it as complete.
+				if (block.partial && this.didCompleteReadingStream) {
+					Logger.warn(
+						`[Task:presentAssistantMessage] Stream ended but tool_use block '${block.name}' is still partial. Attempting to process as complete.`,
+					)
+					block.partial = false // Treat as complete for processing
+				}
+
 				const toolDescription = () => {
 					switch (block.name) {
 						case "execute_command":
@@ -1956,6 +2006,8 @@ export class Task {
 					// 	content: await this.formatToolError(errorString),
 					// })
 					pushToolResult(formatResponse.toolError(errorString))
+					// Abort the task after handling the error
+					await this.abortTask()
 				}
 
 				// If block is partial, remove partial closing tag so its not presented to user
@@ -3831,7 +3883,7 @@ export class Task {
 			request: userContent.map((block) => formatContentBlockToMarkdown(block)).join("\n\n"),
 		} satisfies ClineApiReqInfo)
 		await this.saveClineMessagesAndUpdateHistory()
-		await this.postStateToWebview()
+		await this.postStateToWebview(this.taskId)
 
 		try {
 			let cacheWriteTokens = 0
@@ -3878,7 +3930,7 @@ export class Task {
 					// lastMessage.ts = Date.now() DO NOT update ts since it is used as a key for virtuoso list
 					lastMessage.partial = false
 					// instead of streaming partialMessage events, we do a save and post like normal to persist to disk
-					console.log("updating partial message", lastMessage)
+					Logger.info(`updating partial message: ${JSON.stringify(lastMessage)}`)
 					// await this.saveClineMessagesAndUpdateHistory()
 				}
 
@@ -4022,7 +4074,7 @@ export class Task {
 					}
 					updateApiReqMsg()
 					await this.saveClineMessagesAndUpdateHistory()
-					await this.postStateToWebview()
+					await this.postStateToWebview(this.taskId)
 				})
 			}
 
@@ -4046,7 +4098,7 @@ export class Task {
 
 			updateApiReqMsg()
 			await this.saveClineMessagesAndUpdateHistory()
-			await this.postStateToWebview()
+			await this.postStateToWebview(this.taskId)
 
 			// now add to apiconversationhistory
 			// need to save assistant responses to file before proceeding to tool use since user can exit at any moment and we wouldn't be able to save the assistant's response

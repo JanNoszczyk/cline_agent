@@ -1,0 +1,1412 @@
+syntax = "proto3";
+
+package cline.task_control;
+
+// Align go_package with the Go module path ('sandboxclient') and target directory ('genproto')
+option go_package = "sandboxclient/genproto/task_control";
+
+import "google/protobuf/struct.proto"; // For McpTool inputSchema, UpdateSettingsRequest
+import "google/protobuf/empty.proto";   // For empty requests/responses
+import "google/protobuf/wrappers.proto"; // For NullableString alternative (optional string value = 1;)
+
+// =============================================================================
+// Base Types (Verified/Refined in Steps 2 & 8)
+// =============================================================================
+
+// From src/shared/api.ts
+// -----------------------
+
+enum ApiProvider {
+  API_PROVIDER_UNSPECIFIED = 0;
+  ANTHROPIC = 1;
+  OPENROUTER = 2;
+  BEDROCK = 3;
+  VERTEX = 4;
+  OPENAI = 5;
+  OLLAMA = 6;
+  LMSTUDIO = 7;
+  GEMINI = 8;
+  OPENAI_NATIVE = 9;
+  REQUESTY = 10;
+  TOGETHER = 11;
+  DEEPSEEK = 12;
+  QWEN = 13;
+  DOUBAO = 14;
+  MISTRAL = 15;
+  VSCODE_LM = 16;
+  CLINE = 17;
+  LITELLM = 18;
+  ASKSAGE = 19;
+  XAI = 20;
+  SAMBANOVA = 21;
+}
+
+message PriceTier {
+  double token_limit = 1; // Use a large number (e.g., MAX_DOUBLE) or specific convention for Infinity
+  double price = 2; // Price per million tokens
+}
+
+message ModelInfo {
+  message ThinkingConfig {
+    optional double max_budget = 1;
+    optional double output_price = 2;
+    repeated PriceTier output_price_tiers = 3;
+  }
+
+  optional int64 max_tokens = 1;
+  optional int64 context_window = 2;
+  optional bool supports_images = 3;
+  bool supports_prompt_cache = 4; // Hardcoded for now in TS
+  optional double input_price = 5;
+  repeated PriceTier input_price_tiers = 6;
+  optional double output_price = 7;
+  repeated PriceTier output_price_tiers = 8;
+  optional ThinkingConfig thinking_config = 9;
+  optional double cache_writes_price = 10;
+  optional double cache_reads_price = 11;
+  optional string description = 12;
+}
+
+message OpenAiCompatibleModelInfo {
+  ModelInfo base_info = 1;
+  optional double temperature = 2;
+  optional bool is_r1_format_required = 3;
+}
+
+message LanguageModelChatSelector {
+  string id = 1; // Simplified representation based on TS `LanguageModelChatSelector` usage
+}
+
+message ApiConfiguration {
+  // ApiHandlerOptions fields
+  optional string api_model_id = 1;
+  optional string api_key = 2; // anthropic specific field in TS comment
+  optional string cline_api_key = 3;
+  optional string task_id = 4;
+  optional string lite_llm_base_url = 5;
+  optional string lite_llm_model_id = 6;
+  optional string lite_llm_api_key = 7;
+  optional bool lite_llm_use_prompt_cache = 8;
+  map<string, string> open_ai_headers = 9;
+  optional string anthropic_base_url = 10;
+  optional string open_router_api_key = 11;
+  optional string open_router_model_id = 12;
+  optional ModelInfo open_router_model_info = 13;
+  optional string open_router_provider_sorting = 14;
+  optional string aws_access_key = 15;
+  optional string aws_secret_key = 16;
+  optional string aws_session_token = 17;
+  optional string aws_region = 18;
+  optional bool aws_use_cross_region_inference = 19;
+  optional bool aws_bedrock_use_prompt_cache = 20;
+  optional bool aws_use_profile = 21;
+  optional string aws_profile = 22;
+  optional string aws_bedrock_endpoint = 23;
+  optional string vertex_project_id = 24;
+  optional string vertex_region = 25;
+  optional string open_ai_base_url = 26;
+  optional string open_ai_api_key = 27;
+  optional string open_ai_model_id = 28;
+  optional OpenAiCompatibleModelInfo open_ai_model_info = 29;
+  optional string ollama_model_id = 30;
+  optional string ollama_base_url = 31;
+  optional string ollama_api_options_ctx_num = 32;
+  optional string lm_studio_model_id = 33;
+  optional string lm_studio_base_url = 34;
+  optional string gemini_api_key = 35;
+  optional string gemini_base_url = 36;
+  optional string open_ai_native_api_key = 37;
+  optional string deep_seek_api_key = 38;
+  optional string requesty_api_key = 39;
+  optional string requesty_model_id = 40;
+  optional ModelInfo requesty_model_info = 41;
+  optional string together_api_key = 42;
+  optional string together_model_id = 43;
+  optional string qwen_api_key = 44;
+  optional string doubao_api_key = 45;
+  optional string mistral_api_key = 46;
+  optional string azure_api_version = 47;
+  optional LanguageModelChatSelector vs_code_lm_model_selector = 48;
+  optional string o3_mini_reasoning_effort = 49;
+  optional string qwen_api_line = 50;
+  optional string asksage_api_url = 51;
+  optional string asksage_api_key = 52;
+  optional string xai_api_key = 53;
+  optional double thinking_budget_tokens = 54; // TS uses number, double seems appropriate
+  optional string reasoning_effort = 55;
+  optional string sambanova_api_key = 56;
+
+  // ApiConfiguration specific fields
+  optional ApiProvider api_provider = 57;
+  repeated string favorited_model_ids = 58;
+}
+
+// From src/shared/ChatSettings.ts
+// --------------------------------
+enum ChatMode {
+  CHAT_MODE_UNSPECIFIED = 0;
+  PLAN = 1;
+  ACT = 2;
+}
+
+message ChatSettings {
+  ChatMode mode = 1;
+}
+
+// From src/shared/BrowserSettings.ts
+// ----------------------------------
+message BrowserViewport {
+  int32 width = 1; // TS uses number, int32 appropriate for pixels
+  int32 height = 2; // TS uses number, int32 appropriate for pixels
+}
+
+message BrowserSettings {
+  BrowserViewport viewport = 1;
+  optional string remote_browser_host = 2;
+  optional bool remote_browser_enabled = 3;
+}
+
+// From src/shared/AutoApprovalSettings.ts
+// ---------------------------------------
+message AutoApprovalActions {
+  bool read_files = 1;
+  optional bool read_files_externally = 2;
+  bool edit_files = 3;
+  optional bool edit_files_externally = 4;
+  optional bool execute_safe_commands = 5;
+  optional bool execute_all_commands = 6;
+  bool use_browser = 7;
+  bool use_mcp = 8;
+}
+
+message AutoApprovalSettings {
+  int64 version = 1; // TS uses number, int64 is safer for potential increments
+  bool enabled = 2;
+  AutoApprovalActions actions = 3;
+  int32 max_requests = 4; // TS uses number, int32 sufficient
+  bool enable_notifications = 5;
+}
+
+// From src/shared/UserInfo.ts
+// ---------------------------
+message UserInfo {
+  optional string display_name = 1; // Handles TS string | null
+  optional string email = 2;        // Handles TS string | null
+  optional string photo_url = 3;     // Handles TS string | null
+}
+
+// From src/shared/ChatContent.ts
+// ------------------------------
+message ChatContent {
+  optional string message = 1;
+  repeated string images = 2; // Base64 encoded or URIs
+}
+
+// From src/shared/HistoryItem.ts
+// -------------------------------
+message HistoryItem {
+  message ConversationHistoryDeletedRange {
+    int64 start_index = 1; // TS number[], int64 suitable
+    int64 end_index = 2;   // TS number[], int64 suitable
+  }
+  string id = 1;
+  int64 ts = 2; // TS number (timestamp), int64 suitable
+  string task = 3;
+  int64 tokens_in = 4;  // TS number, int64 suitable
+  int64 tokens_out = 5; // TS number, int64 suitable
+  optional int64 cache_writes = 6; // TS number?, int64 suitable
+  optional int64 cache_reads = 7;  // TS number?, int64 suitable
+  double total_cost = 8; // TS number, double suitable for cost
+  optional int64 size = 9; // TS number?, int64 suitable for bytes
+  optional string shadow_git_config_work_tree = 10;
+  optional ConversationHistoryDeletedRange conversation_history_deleted_range = 11;
+}
+
+// From src/shared/mcp.ts
+// -----------------------
+enum McpServerStatus {
+  MCP_SERVER_STATUS_UNSPECIFIED = 0;
+  CONNECTED = 1;
+  CONNECTING = 2;
+  DISCONNECTED = 3;
+}
+
+message McpTool {
+  string name = 1;
+  optional string description = 2;
+  optional google.protobuf.Struct input_schema = 3; // TS object -> Struct
+  optional bool auto_approve = 4;
+}
+
+message McpResource {
+  string uri = 1;
+  string name = 2;
+  optional string mime_type = 3;
+  optional string description = 4;
+}
+
+message McpResourceTemplate {
+  string uri_template = 1;
+  string name = 2;
+  optional string description = 3;
+  optional string mime_type = 4;
+}
+
+message McpServer {
+  string name = 1;
+  string config = 2; // Path or identifier for the config
+  McpServerStatus status = 3;
+  optional string error = 4;
+  repeated McpTool tools = 5;
+  repeated McpResource resources = 6;
+  repeated McpResourceTemplate resource_templates = 7;
+  optional bool disabled = 8;
+  optional int32 timeout = 9; // TS number?, int32 suitable for seconds
+}
+
+enum McpViewTab {
+  MCP_VIEW_TAB_UNSPECIFIED = 0;
+  MARKETPLACE = 1;
+  ADD_REMOTE = 2;
+  INSTALLED = 3;
+}
+
+// --- Types related to MCP Marketplace ---
+message McpMarketplaceItem {
+  string mcp_id = 1;
+  string github_url = 2;
+  string name = 3;
+  string author = 4;
+  string description = 5;
+  string codicon_icon = 6;
+  string logo_url = 7;
+  string category = 8;
+  repeated string tags = 9;
+  bool requires_api_key = 10;
+  optional string readme_content = 11;
+  optional string llms_installation_content = 12;
+  bool is_recommended = 13;
+  int64 github_stars = 14;    // TS number, int64 suitable
+  int64 download_count = 15; // TS number, int64 suitable
+  string created_at = 16; // TS string (ISO date), keep as string or use google.protobuf.Timestamp
+  string updated_at = 17; // TS string (ISO date), keep as string or use google.protobuf.Timestamp
+  string last_github_sync = 18; // TS string (ISO date), keep as string or use google.protobuf.Timestamp
+}
+
+message McpMarketplaceCatalog {
+  repeated McpMarketplaceItem items = 1;
+}
+
+message McpDownloadResponse {
+  string mcp_id = 1;
+  string github_url = 2;
+  string name = 3;
+  string author = 4;
+  string description = 5;
+  string readme_content = 6;
+  string llms_installation_content = 7;
+  bool requires_api_key = 8;
+}
+
+
+// From src/shared/TelemetrySetting.ts
+// -----------------------------------
+enum TelemetrySettingValue {
+  TELEMETRY_SETTING_UNSPECIFIED = 0;
+  UNSET = 1;
+  ENABLED = 2;
+  DISABLED = 3;
+}
+
+// From src/shared/cline-rules.ts
+// ------------------------------
+message ClineRulesToggles {
+  map<string, bool> toggles = 1; // TS Record<string, boolean> -> map<string, bool>
+}
+
+// From src/utils/git.ts
+// ---------------------
+message GitCommit {
+  string hash = 1;
+  string short_hash = 2;
+  string subject = 3;
+  string author = 4;
+  string date = 5; // TS string (short date), string is fine
+}
+
+// From src/shared/ClineAccount.ts (Refined in Step 8)
+// -------------------------------------------
+message BalanceResponse {
+  double current_balance = 1; // TS number -> double
+}
+
+message UsageTransaction {
+  string spent_at = 1;         // TS string (ISO date)
+  string credits = 2;          // TS string
+  string model_provider = 3;   // TS string
+  string model = 4;            // TS string
+  string prompt_tokens = 5;    // TS string (represents number)
+  string completion_tokens = 6;// TS string (represents number)
+}
+
+message PaymentTransaction {
+  string paid_at = 1;          // TS string (ISO date)
+  string amount_cents = 2;     // TS string (represents number)
+  string credits = 3;          // TS string (represents number)
+}
+
+// For RelativePathsResponsePayload (Refined in Step 8)
+// -------------------------------------------
+// Using Wrapped Type for Nullable String in Repeated Field
+// message NullableString {
+//   optional string value = 1;
+// }
+// Alternative: Using google.protobuf.StringValue
+message RelativePathsResponsePayload {
+  repeated google.protobuf.StringValue paths = 1; // Represents (string | null)[]
+}
+
+
+// =============================================================================
+// ClineMessage Definition (Verified/Refined in Step 3)
+// =============================================================================
+
+enum ClineAskType {
+  CLINE_ASK_TYPE_UNSPECIFIED = 0;
+  FOLLOWUP = 1;              // Corresponds to ClineAskQuestion payload
+  PLAN_MODE_RESPOND = 2;     // Corresponds to ClinePlanModeResponse payload
+  COMMAND = 3;               // Payload defined below (AskCommandPayload)
+  COMMAND_OUTPUT = 4;        // Payload defined below (AskCommandOutputPayload)
+  COMPLETION_RESULT = 5;     // Payload defined below (AskCompletionResultPayload)
+  TOOL = 6;                  // Payload defined below (AskToolPayload)
+  API_REQ_FAILED = 7;        // Payload defined below (AskApiReqFailedPayload)
+  RESUME_TASK = 8;           // Payload defined below (AskResumeTaskPayload)
+  RESUME_COMPLETED_TASK = 9; // Payload defined below (AskResumeCompletedTaskPayload)
+  MISTAKE_LIMIT_REACHED = 10; // Payload defined below (AskMistakeLimitReachedPayload)
+  AUTO_APPROVAL_MAX_REQ_REACHED = 11; // Payload defined below (AskAutoApprovalMaxReqReachedPayload)
+  BROWSER_ACTION_LAUNCH = 12; // Payload defined below (AskBrowserActionLaunchPayload)
+  USE_MCP_SERVER = 13;       // Corresponds to ClineAskUseMcpServer payload
+  ASK_NEW_TASK = 14;         // Corresponds to ClineAskNewTask payload - PREFIXED
+}
+
+enum ClineSayType {
+  CLINE_SAY_TYPE_UNSPECIFIED = 0;
+  SAY_TASK = 1;             // Payload defined below (SayTaskPayload) - PREFIXED
+  SAY_ERROR = 2;            // *** CORRECTED *** Payload defined below (SayErrorPayload)
+  API_REQ_STARTED = 3;      // Uses SayApiReqInfoPayload
+  API_REQ_FINISHED = 4;     // Uses SayApiReqInfoPayload
+  SAY_TEXT = 5;             // *** CORRECTED *** Payload defined below (SayTextPayload)
+  REASONING = 6;            // Payload defined below (SayReasoningPayload)
+  SAY_COMPLETION_RESULT = 7;// Payload defined below (SayCompletionResultPayload) - Renamed from COMPLETION_RESULT
+  USER_FEEDBACK = 8;        // Payload defined below (SayUserFeedbackPayload)
+  USER_FEEDBACK_DIFF = 9;   // Payload defined below (SayUserFeedbackDiffPayload)
+  API_REQ_RETRIED = 10;     // Uses SayApiReqInfoPayload
+  SAY_COMMAND = 11;         // Payload defined below (SayCommandPayload) - Renamed from COMMAND
+  SAY_COMMAND_OUTPUT = 12;  // Payload defined below (SayCommandOutputPayload) - Renamed from COMMAND_OUTPUT
+  SAY_TOOL = 13;            // Corresponds to ClineSayTool payload - Renamed from TOOL
+  SHELL_INTEGRATION_WARNING = 14; // Payload defined below (SayShellIntegrationWarningPayload)
+  SAY_BROWSER_ACTION_LAUNCH = 15; // Payload defined below (SayBrowserActionLaunchPayload) - Renamed from BROWSER_ACTION_LAUNCH
+  BROWSER_ACTION = 16;      // Corresponds to ClineSayBrowserAction payload
+  BROWSER_ACTION_RESULT = 17;// Corresponds to BrowserActionResult payload
+  MCP_SERVER_REQUEST_STARTED = 18; // Payload defined below (SayMcpServerRequestStartedPayload)
+  MCP_SERVER_RESPONSE = 19; // Payload defined below (SayMcpServerResponsePayload)
+  SAY_USE_MCP_SERVER = 20;  // Payload defined below (SayUseMcpServerPayload) - Renamed from USE_MCP_SERVER
+  DIFF_ERROR = 21;          // Payload defined below (SayDiffErrorPayload)
+  DELETED_API_REQS = 22;    // Payload defined below (SayDeletedApiReqsPayload)
+  CLINEIGNORE_ERROR = 23;   // Payload defined below (SayClineignoreErrorPayload)
+  CHECKPOINT_CREATED = 24;  // Payload defined below (SayCheckpointCreatedPayload)
+  LOAD_MCP_DOCUMENTATION = 25; // Payload defined below (SayLoadMcpDocumentationPayload)
+}
+
+// --- Ask Payloads ---
+
+// Corresponds to TS ClineAskQuestion
+message AskFollowupPayload {
+  string question = 1;
+  repeated string options = 2;
+  optional string selected = 3; // If response was pre-selected/sent back
+}
+
+// Corresponds to TS ClinePlanModeResponse
+message AskPlanModeRespondPayload {
+  string response = 1;
+  repeated string options = 2;
+  optional string selected = 3; // If response was pre-selected/sent back
+}
+
+// Corresponds to TS ClineAsk = "command" (no specific interface)
+message AskCommandPayload {
+  string command_text = 1; // Assuming the ask simply involves the command text
+}
+
+// Corresponds to TS ClineAsk = "command_output" (no specific interface)
+message AskCommandOutputPayload {
+  string output_text = 1; // Assuming the ask involves the output text
+}
+
+// Corresponds to TS ClineAsk = "completion_result" (no specific interface)
+message AskCompletionResultPayload {
+  string result_text = 1; // Assuming the ask involves the result text
+}
+
+// Corresponds to TS ClineAsk = "tool" (no specific interface)
+// Uses the structure defined for SAY_TOOL for consistency
+message AskToolPayload {
+   SayToolPayload tool_details = 1; // Reusing SayToolPayload structure
+}
+
+// Corresponds to TS ClineAsk = "api_req_failed" (no specific interface)
+message AskApiReqFailedPayload {
+  string error_message = 1; // Assuming the ask involves the error message
+}
+
+// Corresponds to TS ClineAsk = "resume_task" (no specific interface)
+message AskResumeTaskPayload {
+  string task_id = 1; // Assuming the ask includes the task ID
+}
+
+// Corresponds to TS ClineAsk = "resume_completed_task" (no specific interface)
+message AskResumeCompletedTaskPayload {
+  string task_id = 1; // Assuming the ask includes the task ID
+}
+
+// Corresponds to TS ClineAsk = "mistake_limit_reached" (no specific interface)
+message AskMistakeLimitReachedPayload {
+   // No specific payload needed, the type itself is the message
+}
+
+// Corresponds to TS ClineAsk = "auto_approval_max_req_reached" (no specific interface)
+message AskAutoApprovalMaxReqReachedPayload {
+   // No specific payload needed, the type itself is the message
+}
+
+// Corresponds to TS ClineAsk = "browser_action_launch" (no specific interface)
+message AskBrowserActionLaunchPayload {
+  string url = 1; // Assuming the ask includes the URL to be launched
+}
+
+// Corresponds to TS ClineAskUseMcpServer
+message AskUseMcpServerPayload {
+  enum McpRequestType {
+    MCP_REQUEST_TYPE_UNSPECIFIED = 0;
+    USE_MCP_TOOL = 1;
+    ACCESS_MCP_RESOURCE = 2;
+  }
+  string server_name = 1;
+  McpRequestType type = 2;
+  optional string tool_name = 3;
+  optional string arguments_json = 4; // TS arguments?: string
+  optional string uri = 5;
+}
+
+// Corresponds to TS ClineAskNewTask
+message AskNewTaskPayload {
+  string context = 1;
+}
+
+
+// --- Say Payloads ---
+
+// Corresponds to TS ClineSay = "task" (no specific interface)
+message SayTaskPayload {
+  string task_description = 1; // Assuming the initial task message text
+}
+
+// Corresponds to TS ClineSay = "error" (no specific interface)
+message SayErrorPayload {
+  string error_message = 1;
+}
+
+enum ClineApiReqCancelReason {
+  CLINE_API_REQ_CANCEL_REASON_UNSPECIFIED = 0;
+  STREAMING_FAILED = 1;
+  USER_CANCELLED = 2;
+}
+
+// Corresponds to TS ClineApiReqInfo (used for "api_req_started", "api_req_finished", "api_req_retried")
+message SayApiReqInfoPayload {
+  optional string request = 1;
+  optional int64 tokens_in = 2;
+  optional int64 tokens_out = 3;
+  optional int64 cache_writes = 4;
+  optional int64 cache_reads = 5;
+  optional double cost = 6;
+  optional ClineApiReqCancelReason cancel_reason = 7;
+  optional string streaming_failed_message = 8;
+}
+
+// Corresponds to TS ClineSay = "text" (no specific interface)
+message SayTextPayload {
+  string text_content = 1;
+}
+
+// Corresponds to TS ClineSay = "reasoning" (no specific interface)
+message SayReasoningPayload {
+  string reasoning_text = 1;
+}
+
+// Corresponds to TS ClineSay = "completion_result" (no specific interface)
+message SayCompletionResultPayload {
+  string result_text = 1; // Assuming the say involves the result text
+  optional bool has_changes = 2; // Maps to COMPLETION_RESULT_CHANGES_FLAG concept
+}
+
+// Corresponds to TS ClineSay = "user_feedback" (no specific interface)
+message SayUserFeedbackPayload {
+  string feedback_text = 1;
+}
+
+// Corresponds to TS ClineSay = "user_feedback_diff" (no specific interface)
+message SayUserFeedbackDiffPayload {
+  string diff_content = 1;
+}
+
+// Corresponds to TS ClineSay = "command" (no specific interface)
+message SayCommandPayload {
+  string command_text = 1; // Assuming the say involves the command text
+}
+
+// Corresponds to TS ClineSay = "command_output" (no specific interface)
+message SayCommandOutputPayload {
+  string output_text = 1; // Assuming the say involves the output text
+}
+
+// Corresponds to TS ClineSayTool
+enum SayToolType {
+  SAY_TOOL_TYPE_UNSPECIFIED = 0;
+  EDITED_EXISTING_FILE = 1;
+  NEW_FILE_CREATED = 2;
+  READ_FILE = 3;
+  LIST_FILES_TOP_LEVEL = 4;
+  LIST_FILES_RECURSIVE = 5;
+  LIST_CODE_DEFINITION_NAMES = 6;
+  SAY_SEARCH_FILES = 7; // PREFIXED
+}
+
+message SayToolPayload {
+  SayToolType tool = 1;
+  optional string path = 2;
+  optional string diff = 3;
+  optional string content = 4;
+  optional string regex = 5;
+  optional string file_pattern = 6;
+  optional bool operation_is_located_in_workspace = 7;
+}
+
+// Corresponds to TS ClineSay = "shell_integration_warning" (no specific interface)
+message SayShellIntegrationWarningPayload {
+  string warning_message = 1;
+}
+
+// Corresponds to TS ClineSay = "browser_action_launch" (no specific interface)
+message SayBrowserActionLaunchPayload {
+  string url = 1; // Assuming the say involves the launched URL
+}
+
+// Corresponds to TS ClineSayBrowserAction
+enum BrowserActionType {
+  BROWSER_ACTION_TYPE_UNSPECIFIED = 0;
+  LAUNCH = 1;
+  CLICK = 2;
+  TYPE = 3;
+  SCROLL_DOWN = 4;
+  SCROLL_UP = 5;
+  CLOSE = 6;
+}
+
+message SayBrowserActionPayload {
+  BrowserActionType action = 1;
+  optional string coordinate = 2;
+  optional string text = 3;
+}
+
+// Corresponds to TS BrowserActionResult
+message SayBrowserActionResultPayload {
+  optional string screenshot = 1; // Base64 encoded image data
+  optional string logs = 2;
+  optional string current_url = 3;
+  optional string current_mouse_position = 4; // e.g., "x,y"
+}
+
+// Corresponds to TS ClineSay = "mcp_server_request_started" (no specific interface)
+message SayMcpServerRequestStartedPayload {
+  string server_name = 1;
+  // No other details specified in TS type name
+}
+
+// Corresponds to TS ClineSay = "mcp_server_response" (no specific interface)
+message SayMcpServerResponsePayload {
+  string server_name = 1;
+  string response_content = 2; // Placeholder - actual structure depends on MCP response format
+}
+
+// Corresponds to TS ClineSay = "use_mcp_server" (no specific interface)
+// Reusing AskUseMcpServerPayload for consistency
+message SayUseMcpServerPayload {
+  AskUseMcpServerPayload details = 1;
+}
+
+// Corresponds to TS ClineSay = "diff_error" (no specific interface)
+message SayDiffErrorPayload {
+  string error_message = 1;
+  string path = 2; // Assuming error relates to a specific path
+}
+
+// Corresponds to TS ClineSay = "deleted_api_reqs" (no specific interface)
+message SayDeletedApiReqsPayload {
+  int32 count = 1; // Assuming the message includes the count
+}
+
+// Corresponds to TS ClineSay = "clineignore_error" (no specific interface)
+message SayClineignoreErrorPayload {
+  string error_message = 1;
+}
+
+// Corresponds to TS ClineSay = "checkpoint_created" (no specific interface)
+message SayCheckpointCreatedPayload {
+  string checkpoint_hash = 1;
+}
+
+// Corresponds to TS ClineSay = "load_mcp_documentation" (no specific interface)
+message SayLoadMcpDocumentationPayload {
+  // No specific payload needed, the type itself indicates the action
+}
+
+// --- Main ClineMessage ---
+message ClineMessage {
+  enum Type {
+    CLINE_MESSAGE_TYPE_UNSPECIFIED = 0;
+    ASK = 1;
+    SAY = 2;
+  }
+
+  int64 ts = 1; // Timestamp in milliseconds since epoch
+  Type type = 2;
+  optional string text = 3; // General text, often used as fallback or primary content
+  optional string reasoning = 4;
+  repeated string images = 5; // Base64 encoded or URIs
+  optional bool partial = 6;
+  optional string last_checkpoint_hash = 7;
+  optional bool is_checkpoint_checked_out = 8;
+  optional bool is_operation_outside_workspace = 9;
+  optional int64 conversation_history_index = 10;
+  optional HistoryItem.ConversationHistoryDeletedRange conversation_history_deleted_range = 11;
+  optional ClineAskType actual_ask_type = 13; // Explicit discriminator for ask_payload
+  optional ClineSayType actual_say_type = 12; // Explicit discriminator for say_payload
+
+  // Specific payloads based on ASK/SAY type
+  oneof ask_payload {
+    // ClineAskType ask_type = 20; // Discriminator enum MOVED to actual_ask_type field
+    AskFollowupPayload ask_followup_payload = 21; // type=FOLLOWUP
+    AskPlanModeRespondPayload ask_plan_mode_respond_payload = 22; // type=PLAN_MODE_RESPOND
+    AskCommandPayload ask_command_payload = 23; // type=COMMAND
+    AskCommandOutputPayload ask_command_output_payload = 24; // type=COMMAND_OUTPUT
+    AskCompletionResultPayload ask_completion_result_payload = 25; // type=COMPLETION_RESULT
+    AskToolPayload ask_tool_payload = 26; // type=TOOL
+    AskApiReqFailedPayload ask_api_req_failed_payload = 27; // type=API_REQ_FAILED
+    AskResumeTaskPayload ask_resume_task_payload = 28; // type=RESUME_TASK
+    AskResumeCompletedTaskPayload ask_resume_completed_task_payload = 29; // type=RESUME_COMPLETED_TASK
+    AskMistakeLimitReachedPayload ask_mistake_limit_reached_payload = 30; // type=MISTAKE_LIMIT_REACHED
+    AskAutoApprovalMaxReqReachedPayload ask_auto_approval_max_req_reached_payload = 31; // type=AUTO_APPROVAL_MAX_REQ_REACHED
+    AskBrowserActionLaunchPayload ask_browser_action_launch_payload = 32; // type=BROWSER_ACTION_LAUNCH
+    AskUseMcpServerPayload ask_use_mcp_server_payload = 33; // type=USE_MCP_SERVER
+    AskNewTaskPayload ask_new_task_payload = 34; // type=NEW_TASK
+  }
+
+  oneof say_payload {
+    // ClineSayType say_type = 40; // Discriminator enum MOVED to actual_say_type field
+    SayTaskPayload say_task_payload = 41; // type=SAY_TASK
+    SayErrorPayload say_error_payload = 42; // type=SAY_ERROR
+    SayApiReqInfoPayload say_api_req_info_payload = 43; // type=API_REQ_STARTED, API_REQ_FINISHED, API_REQ_RETRIED
+    SayTextPayload say_text_payload = 44; // type=SAY_TEXT
+    SayReasoningPayload say_reasoning_payload = 45; // type=REASONING
+    SayCompletionResultPayload say_completion_result_payload = 46; // type=SAY_COMPLETION_RESULT
+    SayUserFeedbackPayload say_user_feedback_payload = 47; // type=USER_FEEDBACK
+    SayUserFeedbackDiffPayload say_user_feedback_diff_payload = 48; // type=USER_FEEDBACK_DIFF
+    SayCommandPayload say_command_payload = 49; // type=SAY_COMMAND
+    SayCommandOutputPayload say_command_output_payload = 50; // type=SAY_COMMAND_OUTPUT
+    SayToolPayload say_tool_payload = 51; // type=SAY_TOOL
+    SayShellIntegrationWarningPayload say_shell_integration_warning_payload = 52; // type=SHELL_INTEGRATION_WARNING
+    SayBrowserActionLaunchPayload say_browser_action_launch_payload = 53; // type=SAY_BROWSER_ACTION_LAUNCH
+    SayBrowserActionPayload say_browser_action_payload = 54; // type=BROWSER_ACTION
+    SayBrowserActionResultPayload say_browser_action_result_payload = 55; // type=BROWSER_ACTION_RESULT
+    SayMcpServerRequestStartedPayload say_mcp_server_request_started_payload = 56; // type=MCP_SERVER_REQUEST_STARTED
+    SayMcpServerResponsePayload say_mcp_server_response_payload = 57; // type=MCP_SERVER_RESPONSE
+    SayUseMcpServerPayload say_use_mcp_server_payload = 58; // type=SAY_USE_MCP_SERVER
+    SayDiffErrorPayload say_diff_error_payload = 59; // type=DIFF_ERROR
+    SayDeletedApiReqsPayload say_deleted_api_reqs_payload = 60; // type=DELETED_API_REQS
+    SayClineignoreErrorPayload say_clineignore_error_payload = 61; // type=CLINEIGNORE_ERROR
+    SayCheckpointCreatedPayload say_checkpoint_created_payload = 62; // type=CHECKPOINT_CREATED
+    SayLoadMcpDocumentationPayload say_load_mcp_documentation_payload = 63; // type=LOAD_MCP_DOCUMENTATION
+  }
+}
+
+// =============================================================================
+// ExtensionState Definition (Verified/Refined in Step 4)
+// =============================================================================
+
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  AIX = 1;
+  DARWIN = 2;
+  FREEBSD = 3;
+  LINUX = 4;
+  OPENBSD = 5;
+  SUNOS = 6;
+  WIN32 = 7;
+  UNKNOWN = 8;
+}
+
+message ExtensionState {
+  optional ApiConfiguration api_configuration = 1;
+  AutoApprovalSettings auto_approval_settings = 2;
+  BrowserSettings browser_settings = 3;
+  optional string remote_browser_host = 4; // Note: Also exists in BrowserSettings, check consolidation need
+  ChatSettings chat_settings = 5;
+  optional string checkpoint_tracker_error_message = 6;
+  repeated ClineMessage cline_messages = 7;
+  optional HistoryItem current_task_item = 8;
+  optional string custom_instructions = 9;
+  optional bool mcp_marketplace_enabled = 10;
+  bool plan_act_separate_models_setting = 11;
+  Platform platform = 12;
+  bool should_show_announcement = 13;
+  repeated HistoryItem task_history = 14;
+  TelemetrySettingValue telemetry_setting = 15;
+  optional string uri_scheme = 16;
+  optional UserInfo user_info = 17;
+  string version = 18;
+  string vsc_machine_id = 19;
+  ClineRulesToggles global_cline_rules_toggles = 20;
+  ClineRulesToggles local_cline_rules_toggles = 21;
+}
+
+// *** Moved TaskStartedInfo definition here ***
+message TaskStartedInfo {
+  string task_id = 1;
+  string version = 2;
+}
+
+// =============================================================================
+// ExtensionMessage Definition (Verified/Refined in Step 5 & 8)
+// =============================================================================
+
+enum ExtensionMessageType {
+  EXTENSION_MESSAGE_TYPE_UNSPECIFIED = 0;
+  STATE = 1;                      // Corrected: TS uses 1 for STATE
+  PARTIAL_MESSAGE = 2;            // Corrected: TS uses 2 for PARTIAL_MESSAGE (e.g., for text streaming)
+  TEXT = 3;                       // Added: For complete text messages
+  TOOL_USE = 4;                   // Added: For sending tool use requests
+  TOOL_RESULT = 5;                // Added: For sending tool results back to model
+  SELECTED_IMAGES = 6;            // Renumbered
+  OLLAMA_MODELS = 7;              // Renumbered
+  LM_STUDIO_MODELS = 8;           // Renumbered
+  THEME = 9;                      // Renumbered
+  WORKSPACE_UPDATED = 10;         // Renumbered
+  EXTENSION_INVOKE = 11;          // Renumbered
+  OPEN_ROUTER_MODELS = 12;        // Renumbered
+  OPEN_AI_MODELS = 13;            // Renumbered
+  REQUESTY_MODELS = 14;           // Renumbered
+  MCP_SERVERS = 15;               // Renumbered
+  RELINQUISH_CONTROL = 16;        // Renumbered
+  VS_CODE_LM_MODELS = 17;         // Renumbered
+  EXTENSION_REQUEST_VS_CODE_LM_MODELS = 18; // Renumbered
+  EXTENSION_AUTH_CALLBACK = 19;    // Renumbered
+  MCP_MARKETPLACE_CATALOG = 20;   // Renumbered
+  MCP_DOWNLOAD_DETAILS = 21;    // Renumbered
+  COMMIT_SEARCH_RESULTS = 22;   // Renumbered
+  OPEN_GRAPH_DATA = 23;         // Renumbered
+  IS_IMAGE_URL_RESULT = 24;     // Renumbered
+  DID_UPDATE_SETTINGS = 25;     // Renumbered
+  ADD_REMOTE_SERVER_RESULT = 26;// Renumbered
+  USER_CREDITS_BALANCE = 27;    // Renumbered
+  USER_CREDITS_USAGE = 28;      // Renumbered
+  USER_CREDITS_PAYMENTS = 29;   // Renumbered
+  TOTAL_TASKS_SIZE = 30;        // Renumbered
+  ADD_TO_INPUT = 31;            // Renumbered
+  BROWSER_CONNECTION_RESULT = 32; // Renumbered
+  DETECTED_CHROME_PATH = 33;    // Renumbered
+  SCROLL_TO_SETTINGS = 34;      // Renumbered
+  BROWSER_RELAUNCH_RESULT = 35; // Renumbered
+  RELATIVE_PATHS_RESPONSE = 36; // Renumbered
+  FILE_SEARCH_RESULTS = 37;     // Renumbered
+  GRPC_RESPONSE = 38;           // Renumbered
+  TASK_STARTED = 39;            // Kept same value
+  // ACTION = 40;               // Renumbered ACTION (if needed, TS currently doesn't seem to send it)
+  ERROR = 99;                   // Added: For sending errors (matching TS const)
+}
+
+// Corrected ExtensionMessage structure
+message ExtensionMessage {
+  ExtensionMessageType type = 1;
+  // Use dedicated fields for common simple payloads instead of relying solely on 'oneof'
+  optional string generic_text = 2; // For types like THEME, ADD_TO_INPUT, DETECTED_CHROME_PATH etc.
+  optional string error_message = 3; // Use specifically for ERROR type (99)
+
+  // Define wrapper types *outside* the oneof, if they are complex
+  message OpenRouterModelsWrapper { map<string, ModelInfo> models = 1; }
+  message RequestyModelsWrapper { map<string, ModelInfo> models = 1; }
+  message RepeatedStringWrapper { repeated string values = 1; }
+  message McpServerListWrapper { repeated McpServer servers = 1; }
+  message VsCodeLmModelListWrapper { repeated VsCodeLmModel models = 1; }
+  message GitCommitListWrapper { repeated GitCommit commits = 1; }
+  message UsageTransactionListWrapper { repeated UsageTransaction transactions = 1; }
+  message PaymentTransactionListWrapper { repeated PaymentTransaction transactions = 1; }
+  message FileSearchResultListWrapper { repeated FileSearchResult results = 1; }
+
+  // The 'oneof' defines the *specific* payload based on the 'type' field
+  // Temporarily making task_started a direct field for debugging oneof issue
+  optional TaskStartedInfo task_started = 38;       // type=TASK_STARTED (39)
+
+  oneof payload {
+    ExtensionState state = 4;                // type=STATE (1)
+    ClineMessage partial_message = 5;      // type=PARTIAL_MESSAGE (2)
+    ClineMessage text_message = 6;           // type=TEXT (3) - Use ClineMessage for consistency
+    ToolUseBlock tool_use = 7;               // type=TOOL_USE (4)
+    ToolResultBlock tool_result = 8;         // type=TOOL_RESULT (5)
+    RepeatedStringWrapper selected_images = 9; // type=SELECTED_IMAGES (6)
+    RepeatedStringWrapper ollama_models = 10; // type=OLLAMA_MODELS (7)
+    RepeatedStringWrapper lm_studio_models = 11; // type=LM_STUDIO_MODELS (8)
+    // THEME (9) uses generic_text field
+    // WORKSPACE_UPDATED (10) might use a dedicated payload or be signal only
+    InvokeType invoke = 13;                  // type=EXTENSION_INVOKE (11)
+    OpenRouterModelsWrapper open_router_models = 14; // type=OPEN_ROUTER_MODELS (12)
+    RepeatedStringWrapper open_ai_models = 15; // type=OPEN_AI_MODELS (13)
+    RequestyModelsWrapper requesty_models = 16; // type=REQUESTY_MODELS (14)
+    McpServerListWrapper mcp_servers = 17; // type=MCP_SERVERS (15)
+    // RELINQUISH_CONTROL (16) has no payload
+    VsCodeLmModelListWrapper vs_code_lm_models = 18; // type=VS_CODE_LM_MODELS (17)
+    // EXTENSION_REQUEST_VS_CODE_LM_MODELS (18) has no payload
+    string auth_callback_custom_token = 19; // type=EXTENSION_AUTH_CALLBACK (19)
+    McpMarketplaceCatalog mcp_marketplace_catalog = 20; // type=MCP_MARKETPLACE_CATALOG (20)
+    McpDownloadResponse mcp_download_details = 21; // type=MCP_DOWNLOAD_DETAILS (21)
+    GitCommitListWrapper commit_search_results = 22; // type=COMMIT_SEARCH_RESULTS (22)
+    OpenGraphData open_graph_data = 23;      // type=OPEN_GRAPH_DATA (23)
+    bool is_image_url_result = 24;           // type=IS_IMAGE_URL_RESULT (24)
+    // DID_UPDATE_SETTINGS (25) has no payload
+    AddRemoteServerResult add_remote_server_result = 25; // type=ADD_REMOTE_SERVER_RESULT (26)
+    BalanceResponse user_credits_balance = 26; // type=USER_CREDITS_BALANCE (27)
+    UsageTransactionListWrapper user_credits_usage = 27; // type=USER_CREDITS_USAGE (28)
+    PaymentTransactionListWrapper user_credits_payments = 28; // type=USER_CREDITS_PAYMENTS (29)
+    int64 total_tasks_size = 29;             // type=TOTAL_TASKS_SIZE (30)
+    // ADD_TO_INPUT (31) uses generic_text field
+    BrowserConnectionResult browser_connection_result = 31; // type=BROWSER_CONNECTION_RESULT (32)
+    // DETECTED_CHROME_PATH (33) uses generic_text field
+    // SCROLL_TO_SETTINGS (34) uses generic_text field
+    BrowserRelaunchResult browser_relaunch_result = 34; // type=BROWSER_RELAUNCH_RESULT (35)
+    RelativePathsResponsePayload relative_paths_response = 35; // type=RELATIVE_PATHS_RESPONSE (36)
+    FileSearchResultListWrapper file_search_results = 36; // type=FILE_SEARCH_RESULTS (37)
+    GrpcResponse grpc_response = 37;         // type=GRPC_RESPONSE (38)
+    // TaskStartedInfo task_started = 38; // Moved out of oneof
+    ClineMessage new_chat_message = 40;   // For sending newly completed messages
+  }
+}
+
+// Define ToolUseBlock and ToolResultBlock
+message ToolUseBlock {
+  string tool_use_id = 1; // Corresponds to `id` in Anthropic.ToolUseBlock
+  string name = 2;
+  google.protobuf.Value input = 3; // Represents the JSON object input Anthropic.ToolUseBlock['input']
+}
+
+message ToolResultBlock {
+  string tool_use_id = 1;
+  // Content can be simple text or structured JSON
+  oneof content_payload {
+    string text_content = 2;
+    google.protobuf.Value json_content = 3; // For structured results
+  }
+  optional bool is_error = 4; // Flag if the result is an error
+}
+
+
+enum ActionType {
+  ACTION_TYPE_UNSPECIFIED = 0;
+  CHAT_BUTTON_CLICKED = 1;
+  MCP_BUTTON_CLICKED = 2;
+  SETTINGS_BUTTON_CLICKED = 3;
+  HISTORY_BUTTON_CLICKED = 4;
+  DID_BECOME_VISIBLE = 5;
+  ACTION_ACCOUNT_LOGIN_CLICKED = 6; // PREFIXED
+  ACTION_ACCOUNT_LOGOUT_CLICKED = 7; // PREFIXED
+  ACCOUNT_BUTTON_CLICKED = 8; // Maps to SHOW_ACCOUNT_VIEW_CLICKED?
+  FOCUS_CHAT_INPUT = 9;
+}
+
+enum InvokeType {
+  INVOKE_TYPE_UNSPECIFIED = 0;
+  SEND_MESSAGE = 1;
+  PRIMARY_BUTTON_CLICK = 2;
+  SECONDARY_BUTTON_CLICK = 3;
+}
+
+message VsCodeLmModel {
+  optional string vendor = 1;
+  optional string family = 2;
+  optional string version = 3;
+  optional string id = 4;
+}
+
+message OpenGraphData {
+  optional string title = 1;
+  optional string description = 2;
+  optional string image = 3;
+  optional string url = 4;
+  optional string site_name = 5;
+  optional string type = 6;
+}
+
+message AddRemoteServerResult {
+  bool success = 1;
+  string server_name = 2;
+  optional string error = 3;
+}
+
+message BrowserConnectionResult {
+  bool success = 1;
+  optional string endpoint = 2;
+  optional bool is_bundled = 3;
+  optional bool is_connected = 4;
+  optional bool is_remote = 5;
+  optional string host = 6;
+  optional string error = 7;
+}
+
+message BrowserRelaunchResult {
+  bool success = 1;
+  optional string error = 2;
+}
+
+message FileSearchResult {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    FILE = 1;
+    FOLDER = 2;
+  }
+  string path = 1;
+  Type type = 2;
+  optional string label = 3;
+}
+
+message GrpcResponse {
+  string request_id = 1;
+  optional google.protobuf.Value message = 2; // Represents arbitrary JSON payload
+}
+
+
+// =============================================================================
+// ClientMessage Definition (Requests from Client)
+// =============================================================================
+
+// Define the wrapper message for all client-to-server communication
+message ClientMessage {
+  // Use distinct field numbers for the oneof cases
+  oneof payload {
+    NewTaskRequest new_task = 1; // Corresponds to WebviewMessageType.NEW_TASK
+    AskResponseRequest ask_response = 2; // Corresponds to WebviewMessageType.ASK_RESPONSE
+    google.protobuf.Empty clear_task = 3; // Corresponds to WebviewMessageType.CLEAR_TASK
+    google.protobuf.Empty did_show_announcement = 4; // Corresponds to WebviewMessageType.DID_SHOW_ANNOUNCEMENT
+    // SELECT_IMAGES (UI action) - No direct message payload
+    google.protobuf.Empty export_current_task = 5; // Corresponds to WebviewMessageType.EXPORT_CURRENT_TASK
+    ShowTaskWithIdRequest show_task_with_id = 6; // Corresponds to WebviewMessageType.SHOW_TASK_WITH_ID
+    DeleteTaskWithIdRequest delete_task_with_id = 7; // Corresponds to WebviewMessageType.DELETE_TASK_WITH_ID
+    ExportTaskWithIdRequest export_task_with_id = 8; // Corresponds to WebviewMessageType.EXPORT_TASK_WITH_ID
+    google.protobuf.Empty reset_state = 9; // Corresponds to WebviewMessageType.RESET_STATE
+    google.protobuf.Empty request_ollama_models = 10; // Corresponds to WebviewMessageType.REQUEST_OLLAMA_MODELS
+    google.protobuf.Empty request_lm_studio_models = 11; // Corresponds to WebviewMessageType.REQUEST_LM_STUDIO_MODELS
+    OpenImageRequest open_image = 12; // Corresponds to WebviewMessageType.OPEN_IMAGE
+    OpenInBrowserRequest open_in_browser = 13; // Corresponds to WebviewMessageType.OPEN_IN_BROWSER
+    OpenFileRequest open_file = 14; // Corresponds to WebviewMessageType.OPEN_FILE
+    CreateRuleFileRequest create_rule_file = 15; // Corresponds to WebviewMessageType.CREATE_RULE_FILE
+    OpenMentionRequest open_mention = 16; // Corresponds to WebviewMessageType.OPEN_MENTION
+    google.protobuf.Empty cancel_task = 17; // Corresponds to WebviewMessageType.CANCEL_TASK
+    google.protobuf.Empty show_chat_view = 18; // Corresponds to WebviewMessageType.SHOW_CHAT_VIEW
+    google.protobuf.Empty refresh_open_router_models = 19; // Corresponds to WebviewMessageType.REFRESH_OPEN_ROUTER_MODELS
+    google.protobuf.Empty refresh_requesty_models = 20; // Corresponds to WebviewMessageType.REFRESH_REQUESTY_MODELS
+    google.protobuf.Empty refresh_open_ai_models = 21; // Corresponds to WebviewMessageType.REFRESH_OPEN_AI_MODELS
+    google.protobuf.Empty refresh_cline_rules = 22; // Corresponds to WebviewMessageType.REFRESH_CLINE_RULES
+    google.protobuf.Empty open_mcp_settings = 23; // Corresponds to WebviewMessageType.OPEN_MCP_SETTINGS
+    RestartMcpServerRequest restart_mcp_server = 24; // Corresponds to WebviewMessageType.RESTART_MCP_SERVER
+    DeleteMcpServerRequest delete_mcp_server = 25; // Corresponds to WebviewMessageType.DELETE_MCP_SERVER
+    ApplyAutoApprovalSettingsRequest auto_approval_settings = 26; // Corresponds to WebviewMessageType.AUTO_APPROVAL_SETTINGS
+    ApplyBrowserSettingsRequest browser_settings = 27; // Corresponds to WebviewMessageType.BROWSER_SETTINGS
+    google.protobuf.Empty toggle_plan_act_mode = 28; // Corresponds to WebviewMessageType.TOGGLE_PLAN_ACT_MODE
+    CheckpointRestoreRequest checkpoint_restore = 29; // Corresponds to WebviewMessageType.CHECKPOINT_RESTORE
+    google.protobuf.Empty task_completion_view_changes = 30; // Corresponds to WebviewMessageType.TASK_COMPLETION_VIEW_CHANGES
+    google.protobuf.Empty open_extension_settings = 31; // Corresponds to WebviewMessageType.OPEN_EXTENSION_SETTINGS
+    google.protobuf.Empty request_vs_code_lm_models = 32; // Corresponds to WebviewMessageType.REQUEST_VS_CODE_LM_MODELS
+    ToggleToolAutoApproveRequest toggle_tool_auto_approve = 33; // Corresponds to WebviewMessageType.TOGGLE_TOOL_AUTO_APPROVE
+    ToggleMcpServerRequest toggle_mcp_server = 34; // Corresponds to WebviewMessageType.TOGGLE_MCP_SERVER
+    google.protobuf.Empty get_latest_state = 35; // Corresponds to WebviewMessageType.GET_LATEST_STATE
+    google.protobuf.Empty account_login_clicked = 36; // Corresponds to WebviewMessageType.ACCOUNT_LOGIN_CLICKED
+    google.protobuf.Empty account_logout_clicked = 37; // Corresponds to WebviewMessageType.ACCOUNT_LOGOUT_CLICKED
+    google.protobuf.Empty show_account_view_clicked = 38; // Corresponds to WebviewMessageType.SHOW_ACCOUNT_VIEW_CLICKED
+    AuthStateChangedRequest auth_state_changed = 39; // Corresponds to WebviewMessageType.AUTH_STATE_CHANGED
+    AuthCallbackRequest auth_callback = 40; // Corresponds to WebviewMessageType.AUTH_CALLBACK
+    google.protobuf.Empty fetch_mcp_marketplace = 41; // Corresponds to WebviewMessageType.FETCH_MCP_MARKETPLACE
+    DownloadMcpRequest download_mcp = 42; // Corresponds to WebviewMessageType.DOWNLOAD_MCP
+    google.protobuf.Empty silently_refresh_mcp_marketplace = 43; // Corresponds to WebviewMessageType.SILENTLY_REFRESH_MCP_MARKETPLACE
+    SearchCommitsRequest search_commits = 44; // Corresponds to WebviewMessageType.SEARCH_COMMITS
+    ShowMcpViewRequest show_mcp_view = 45; // Corresponds to WebviewMessageType.SHOW_MCP_VIEW
+    google.protobuf.Empty fetch_latest_mcp_servers_from_hub = 46; // Corresponds to WebviewMessageType.FETCH_LATEST_MCP_SERVERS_FROM_HUB
+    ApplyTelemetrySettingRequest telemetry_setting = 47; // Corresponds to WebviewMessageType.TELEMETRY_SETTING
+    google.protobuf.Empty open_settings = 48; // Corresponds to WebviewMessageType.OPEN_SETTINGS
+    UpdateMcpTimeoutRequest update_mcp_timeout = 49; // Corresponds to WebviewMessageType.UPDATE_MCP_TIMEOUT
+    FetchOpenGraphDataRequest fetch_open_graph_data = 50; // Corresponds to WebviewMessageType.FETCH_OPEN_GRAPH_DATA
+    CheckIsImageUrlRequest check_is_image_url = 51; // Corresponds to WebviewMessageType.CHECK_IS_IMAGE_URL
+    InvokeRequest invoke = 52; // Corresponds to WebviewMessageType.INVOKE (used for user input)
+    UpdateSettingsRequest update_settings = 53; // Corresponds to WebviewMessageType.UPDATE_SETTINGS
+    google.protobuf.Empty clear_all_task_history = 54; // Corresponds to WebviewMessageType.CLEAR_ALL_TASK_HISTORY
+    google.protobuf.Empty fetch_user_credits_data = 55; // Corresponds to WebviewMessageType.FETCH_USER_CREDITS_DATA
+    OptionsResponseRequest options_response = 56; // Corresponds to WebviewMessageType.OPTIONS_RESPONSE
+    google.protobuf.Empty request_total_tasks_size = 57; // Corresponds to WebviewMessageType.REQUEST_TOTAL_TASKS_SIZE
+    google.protobuf.Empty relaunch_chrome_debug_mode = 58; // Corresponds to WebviewMessageType.RELAUNCH_CHROME_DEBUG_MODE
+    TaskFeedbackRequest task_feedback = 59; // Corresponds to WebviewMessageType.TASK_FEEDBACK
+    google.protobuf.Empty get_detected_chrome_path = 60; // Corresponds to WebviewMessageType.GET_DETECTED_CHROME_PATH
+    GetRelativePathsRequest get_relative_paths = 61; // Corresponds to WebviewMessageType.GET_RELATIVE_PATHS
+    SearchFilesRequest search_files = 62; // Corresponds to WebviewMessageType.SEARCH_FILES
+    ToggleFavoriteModelRequest toggle_favorite_model = 63; // Corresponds to WebviewMessageType.TOGGLE_FAVORITE_MODEL
+    GrpcRequest grpc_request = 64; // Corresponds to WebviewMessageType.GRPC_REQUEST
+    ToggleClineRuleRequest toggle_cline_rule = 65; // Corresponds to WebviewMessageType.TOGGLE_CLINE_RULE
+    DeleteClineRuleRequest delete_cline_rule = 66; // Corresponds to WebviewMessageType.DELETE_CLINE_RULE
+    google.protobuf.Empty condense = 67; // Corresponds to WebviewMessageType.CONDENSE
+    string copy_to_clipboard = 68; // Corresponds to WebviewMessageType.COPY_TO_CLIPBOARD (payload is string)
+    int32 update_terminal_connection_timeout = 69; // Corresponds to WebviewMessageType.UPDATE_TERMINAL_CONNECTION_TIMEOUT (payload is number)
+    // Add other WebviewMessage types as needed
+  }
+}
+
+
+// Remove the old enum WebviewMessageType
+/*
+enum WebviewMessageType {
+  WEBVIEW_MESSAGE_TYPE_UNSPECIFIED = 0;
+*/
+
+enum AskResponseType {
+  ASK_RESPONSE_TYPE_UNSPECIFIED = 0;
+  YES_BUTTON_CLICKED = 1;
+  NO_BUTTON_CLICKED = 2;
+  MESSAGE_RESPONSE = 3;
+}
+
+enum ClineCheckpointRestoreType {
+  CLINE_CHECKPOINT_RESTORE_TYPE_UNSPECIFIED = 0;
+  RESTORE_TASK = 1;             // PREFIXED
+  RESTORE_WORKSPACE = 2;        // PREFIXED
+  RESTORE_TASK_AND_WORKSPACE = 3; // PREFIXED
+}
+
+enum TaskFeedbackType {
+  TASK_FEEDBACK_TYPE_UNSPECIFIED = 0;
+  THUMBS_UP = 1;
+  THUMBS_DOWN = 2;
+}
+
+// --- RPC Request Payloads ---
+
+// For NEW_TASK
+message NewTaskRequest {
+  optional string text = 1;
+  optional ChatContent chat_content = 2; // If initial message has images
+}
+
+// For ASK_RESPONSE
+message AskResponseRequest {
+  AskResponseType ask_response_type = 1;
+  optional string text = 2; // For MESSAGE_RESPONSE
+}
+
+// For SHOW_TASK_WITH_ID
+message ShowTaskWithIdRequest {
+  string task_id = 1; // Corresponds to text? in TS
+}
+
+// For DELETE_TASK_WITH_ID
+message DeleteTaskWithIdRequest {
+  string task_id = 1; // Corresponds to text? in TS
+}
+
+// For EXPORT_TASK_WITH_ID
+message ExportTaskWithIdRequest {
+  string task_id = 1; // Corresponds to text? in TS
+}
+
+// For OPEN_IMAGE
+message OpenImageRequest {
+  string image_uri = 1; // Corresponds to text? in TS
+}
+
+// For OPEN_IN_BROWSER
+message OpenInBrowserRequest {
+  string url = 1; // Corresponds to url? in TS
+}
+
+// For OPEN_FILE
+message OpenFileRequest {
+  string file_path = 1; // Corresponds to text? in TS
+}
+
+// For CREATE_RULE_FILE
+message CreateRuleFileRequest {
+  optional string filename = 1; // Corresponds to filename? in TS
+}
+
+// For OPEN_MENTION
+message OpenMentionRequest {
+  string mention_identifier = 1; // Corresponds to text? in TS - Placeholder
+}
+
+// For RESTART_MCP_SERVER
+message RestartMcpServerRequest {
+  string mcp_id = 1; // Corresponds to mcpId? in TS
+}
+
+// For DELETE_MCP_SERVER
+message DeleteMcpServerRequest {
+  string mcp_id = 1; // Corresponds to mcpId? in TS
+}
+
+// For AUTO_APPROVAL_SETTINGS
+message ApplyAutoApprovalSettingsRequest {
+  AutoApprovalSettings settings = 1; // Corresponds to autoApprovalSettings? in TS
+}
+
+// For BROWSER_SETTINGS
+message ApplyBrowserSettingsRequest {
+  BrowserSettings settings = 1; // Corresponds to browserSettings? in TS
+}
+
+// For TOGGLE_PLAN_ACT_MODE
+// Uses google.protobuf.Empty
+
+// For CHECKPOINT_RESTORE
+message CheckpointRestoreRequest {
+  ClineCheckpointRestoreType restore_type = 1; // Corresponds to text? holding enum value in TS
+}
+
+// For TOGGLE_TOOL_AUTO_APPROVE
+message ToggleToolAutoApproveRequest {
+  string server_name = 1;
+  repeated string tool_names = 2;
+  bool auto_approve = 3;
+}
+
+// For TOGGLE_MCP_SERVER
+message ToggleMcpServerRequest {
+  string mcp_id = 1; // Corresponds to mcpId? in TS
+  bool enabled = 2; // Corresponds to enabled? in TS
+}
+
+// For AUTH_STATE_CHANGED
+message AuthStateChangedRequest {
+  optional UserInfo user = 1; // Corresponds to user? in TS
+}
+
+// For AUTH_CALLBACK
+message AuthCallbackRequest {
+  string custom_token = 1; // Corresponds to customToken? in TS
+}
+
+// For DOWNLOAD_MCP
+message DownloadMcpRequest {
+  string mcp_id = 1; // Corresponds to mcpId? in TS
+}
+
+// For SEARCH_COMMITS
+message SearchCommitsRequest {
+  string query = 1; // Corresponds to query? in TS
+}
+
+// For SHOW_MCP_VIEW
+message ShowMcpViewRequest {
+  McpViewTab tab = 1; // Corresponds to tab? in TS
+}
+
+// For TELEMETRY_SETTING
+message ApplyTelemetrySettingRequest {
+  TelemetrySettingValue setting = 1; // Corresponds to telemetrySetting? in TS
+}
+
+// For UPDATE_MCP_TIMEOUT
+message UpdateMcpTimeoutRequest {
+  string mcp_id = 1; // Corresponds to mcpId? in TS
+  int32 timeout = 2; // Corresponds to timeout? in TS
+}
+
+// For FETCH_OPEN_GRAPH_DATA
+message FetchOpenGraphDataRequest {
+  string url = 1; // Corresponds to url? in TS
+}
+
+// For CHECK_IS_IMAGE_URL
+message CheckIsImageUrlRequest {
+  string url = 1; // Corresponds to url? in TS
+}
+
+// For INVOKE
+message InvokeRequest {
+  optional string text = 1;
+  repeated string images = 2; // Base64 or URIs
+}
+
+// For UPDATE_SETTINGS
+message UpdateSettingsRequest {
+  // Using Struct to represent the diverse settings object in TS
+  // Alternatives: oneof for each setting type, or dedicated fields
+  google.protobuf.Struct settings_update = 1;
+  // Specific known settings can be added as optional fields for type safety:
+  optional ApiConfiguration api_configuration = 2; // Corresponds to apiConfiguration?
+  optional ChatSettings chat_settings = 3; // Corresponds to chatSettings?
+  optional bool plan_act_separate_models_setting = 4; // Corresponds to planActSeparateModelsSetting?
+  optional string custom_instructions_setting = 5; // Corresponds to customInstructionsSetting?
+}
+
+// For OPTIONS_RESPONSE
+message OptionsResponseRequest {
+  string selected_option = 1; // Corresponds to text? in TS
+}
+
+// For TASK_FEEDBACK
+message TaskFeedbackRequest {
+  TaskFeedbackType feedback_type = 1; // Corresponds to feedbackType? in TS
+  optional string text = 2; // Corresponds to text? in TS
+}
+
+// For GET_RELATIVE_PATHS
+message GetRelativePathsRequest {
+  repeated string uris = 1; // Corresponds to uris? in TS
+}
+
+// For SEARCH_FILES
+message SearchFilesRequest {
+  string query = 1; // Corresponds to query? in TS
+}
+
+// For TOGGLE_FAVORITE_MODEL
+message ToggleFavoriteModelRequest {
+  string model_id = 1; // Corresponds to modelId? in TS
+  bool is_favorite = 2; // Corresponds to bool? in TS (assuming that's the favorite status)
+}
+
+// For GRPC_REQUEST (Tunneling)
+message GrpcRequest {
+  string service = 1;
+  string method = 2;
+  google.protobuf.Value message = 3; // JSON serialized protobuf message from TS `any`
+  string request_id = 4;
+}
+
+// For TOGGLE_CLINE_RULE
+message ToggleClineRuleRequest {
+  string rule_path = 1; // Corresponds to rulePath? in TS
+  bool is_global = 2;   // Corresponds to isGlobal? in TS
+  bool enabled = 3;     // Corresponds to enabled? in TS
+}
+
+// For DELETE_CLINE_RULE
+message DeleteClineRuleRequest {
+  string rule_path = 1; // Corresponds to rulePath? in TS
+  bool is_global = 2;   // Corresponds to isGlobal? in TS
+}
+
+// For ADD_REMOTE_SERVER
+message AddRemoteServerRequestPayload {
+    string server_config = 1; // Corresponds to text? in TS
+}
+
+
+// =============================================================================
+// TaskControlService Definition (Verified/Refined Step 7 & 8)
+// =============================================================================
+
+service TaskControlService {
+  // Core Task Flow
+  rpc StartTask(NewTaskRequest) returns (stream ExtensionMessage);
+  rpc ClearTask(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc SendUserInput(InvokeRequest) returns (stream ExtensionMessage); // For user messages via INVOKE
+  rpc SubmitAskResponse(AskResponseRequest) returns (stream ExtensionMessage);
+  rpc SubmitOptionsResponse(OptionsResponseRequest) returns (stream ExtensionMessage);
+  rpc CancelTask(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ResumeLatestTask(google.protobuf.Empty) returns (stream ExtensionMessage);
+
+  // State & History Management
+  rpc GetLatestState(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ResetState(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ShowTaskWithId(ShowTaskWithIdRequest) returns (stream ExtensionMessage);
+  rpc DeleteTaskWithId(DeleteTaskWithIdRequest) returns (stream ExtensionMessage);
+  rpc ExportCurrentTask(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ExportTaskWithId(ExportTaskWithIdRequest) returns (stream ExtensionMessage);
+  rpc ClearAllTaskHistory(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc RequestTotalTasksSize(google.protobuf.Empty) returns (stream ExtensionMessage);
+
+  // Settings Management
+  rpc ApplyApiConfiguration(ApiConfiguration) returns (stream ExtensionMessage);
+  rpc ApplyAutoApprovalSettings(ApplyAutoApprovalSettingsRequest) returns (stream ExtensionMessage);
+  rpc ApplyBrowserSettings(ApplyBrowserSettingsRequest) returns (stream ExtensionMessage);
+  rpc ApplyChatSettings(ChatSettings) returns (stream ExtensionMessage); // Added based on Step 8 refinement
+  rpc ApplyTelemetrySetting(ApplyTelemetrySettingRequest) returns (stream ExtensionMessage);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (stream ExtensionMessage); // Generic update
+  rpc TogglePlanActMode(google.protobuf.Empty) returns (stream ExtensionMessage); // Refined request type
+
+  // Model & Provider Refresh / Interaction
+  rpc RequestOllamaModels(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc RequestLmStudioModels(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc RequestVsCodeLmModels(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc RefreshOpenRouterModels(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc RefreshRequestyModels(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc RefreshOpenAiModels(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ToggleFavoriteModel(ToggleFavoriteModelRequest) returns (stream ExtensionMessage);
+
+  // MCP Management
+  rpc AddRemoteServer(AddRemoteServerRequestPayload) returns (stream ExtensionMessage);
+  rpc RestartMcpServer(RestartMcpServerRequest) returns (stream ExtensionMessage);
+  rpc DeleteMcpServer(DeleteMcpServerRequest) returns (stream ExtensionMessage);
+  rpc ToggleMcpServer(ToggleMcpServerRequest) returns (stream ExtensionMessage);
+  rpc UpdateMcpTimeout(UpdateMcpTimeoutRequest) returns (stream ExtensionMessage);
+  rpc FetchMcpMarketplace(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc SilentlyRefreshMcpMarketplace(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc DownloadMcp(DownloadMcpRequest) returns (stream ExtensionMessage);
+  rpc FetchLatestMcpServersFromHub(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ToggleToolAutoApprove(ToggleToolAutoApproveRequest) returns (stream ExtensionMessage);
+
+  // File/System Interaction
+  rpc OpenImage(OpenImageRequest) returns (stream ExtensionMessage);
+  rpc OpenInBrowser(OpenInBrowserRequest) returns (stream ExtensionMessage);
+  rpc OpenFile(OpenFileRequest) returns (stream ExtensionMessage);
+  rpc CreateRuleFile(CreateRuleFileRequest) returns (stream ExtensionMessage);
+  rpc RefreshClineRules(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc GetRelativePaths(GetRelativePathsRequest) returns (stream ExtensionMessage);
+  rpc SearchFiles(SearchFilesRequest) returns (stream ExtensionMessage);
+  rpc GetDetectedChromePath(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc RelaunchChromeDebugMode(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ToggleClineRule(ToggleClineRuleRequest) returns (stream ExtensionMessage);
+  rpc DeleteClineRule(DeleteClineRuleRequest) returns (stream ExtensionMessage);
+
+  // Auth & Account
+  rpc AccountLoginClicked(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc AccountLogoutClicked(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ShowAccountViewClicked(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc AuthStateChanged(AuthStateChangedRequest) returns (stream ExtensionMessage);
+  rpc AuthCallback(AuthCallbackRequest) returns (stream ExtensionMessage);
+  rpc FetchUserCreditsData(google.protobuf.Empty) returns (stream ExtensionMessage);
+
+  // Misc UI/Interaction Triggers
+  rpc WebviewDidLaunch(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc DidShowAnnouncement(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc OpenMention(OpenMentionRequest) returns (stream ExtensionMessage);
+  rpc ShowChatView(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc OpenMcpSettings(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc CheckpointRestore(CheckpointRestoreRequest) returns (stream ExtensionMessage);
+  rpc TaskCompletionViewChanges(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc OpenExtensionSettings(google.protobuf.Empty) returns (stream ExtensionMessage);
+  rpc ShowMcpView(ShowMcpViewRequest) returns (stream ExtensionMessage);
+  rpc OpenSettings(google.protobuf.Empty) returns (stream ExtensionMessage); // Generic open settings
+  rpc FetchOpenGraphData(FetchOpenGraphDataRequest) returns (stream ExtensionMessage);
+  rpc CheckIsImageUrl(CheckIsImageUrlRequest) returns (stream ExtensionMessage);
+  rpc TaskFeedback(TaskFeedbackRequest) returns (stream ExtensionMessage);
+  rpc SearchCommits(SearchCommitsRequest) returns (stream ExtensionMessage);
+
+  // Potential gRPC Tunnel (Optional)
+  // rpc GrpcTunnel(stream GrpcRequest) returns (stream ExtensionMessage); // Assuming requests map to ExtensionMessage responses
+}
