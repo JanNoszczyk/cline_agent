@@ -87,7 +87,7 @@ async function main() {
 			`--go_opt=module=sandboxclient`, // Specify the Go module
 			`--go-grpc_out="${GO_OUT_DIR}"`,
 			`--go-grpc_opt=module=sandboxclient`, // Specify the Go module for gRPC
-			`"${fullProtoPath}"`, // The proto file to process
+			`"${path.join(SCRIPT_DIR, protoFile)}"`, // Use the correct path variable
 		].join(" ")
 
 		try {

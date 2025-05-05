@@ -21,3 +21,11 @@ coverage
 *evals.env
 
 .history/
+
+# Ignore generated protobuf files/directories
+sandbox-client/genproto/
+src/shared/proto/**/*.ts
+src/shared/proto/**/*.js
+src/shared/proto/**/*.d.ts
+src/shared/proto/google/
+!src/shared/proto/**/*.proto

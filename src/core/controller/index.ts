@@ -171,6 +171,8 @@ export class Controller {
 			images,
 			historyItem,
 		)
+		// Return the created task instance
+		return this.task
 	}
 
 	async reinitExistingTaskFromId(taskId: string) {

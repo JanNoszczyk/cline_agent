@@ -12,6 +12,7 @@ import { telemetryService } from "./services/telemetry/TelemetryService"
 import { WebviewProvider } from "./core/webview"
 import { ErrorService } from "./services/error/ErrorService"
 import { initializeTestMode, cleanupTestMode } from "./services/test/TestMode"
+import { GrpcBridge } from "./services/grpc/GrpcBridge" // Import GrpcBridge
 
 /*
 Built using https://github.com/microsoft/vscode-webview-ui-toolkit
@@ -35,6 +36,20 @@ export function activate(context: vscode.ExtensionContext) {
 	Logger.log("Cline extension activated")
 
 	const sidebarWebview = new WebviewProvider(context, outputChannel)
+
+	// --- gRPC Bridge Initialization ---
+	const grpcBridge = new GrpcBridge(context)
+	context.subscriptions.push(grpcBridge) // Register for disposal
+
+	// Pass the controller instance to the bridge.
+	// GrpcBridge.setController will now wrap the controller's postMessageToWebview method internally.
+	if (sidebarWebview.controller) {
+		grpcBridge.setController(sidebarWebview.controller)
+	} else {
+		// Log an error or handle the case where the controller isn't immediately available
+		Logger.error("[extension.ts] Controller instance not found on WebviewProvider during activation.")
+	}
+	// --- End gRPC Bridge Initialization ---
 
 	// Initialize test mode and add disposables to context
 	context.subscriptions.push(...initializeTestMode(context, sidebarWebview))
