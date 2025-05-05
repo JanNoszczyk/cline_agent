@@ -72,7 +72,7 @@ echo "OpenVSCode Server is listening on port ${VSCODE_INTERNAL_PORT}."
 # Use CLINE_GRPC_HOST env var (set in docker-compose), fallback to host.docker.internal
 GRPC_HOST=${CLINE_GRPC_HOST:-host.docker.internal}
 GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Use default if env var not set
-WAIT_TIMEOUT=120 # Maximum seconds to wait for gRPC port (Increased from 60)
+WAIT_TIMEOUT=300 # Maximum seconds to wait for gRPC port (Increased from 120)
 WAIT_INTERVAL=1 # Seconds between checks
 SECONDS_WAITED=0
 
@@ -88,6 +88,8 @@ while ! nc -z ${GRPC_HOST} ${GRPC_PORT} 2>/dev/null; do
   echo "Waited ${SECONDS_WAITED}s..."
 done
 echo "Cline gRPC server detected at ${GRPC_HOST}:${GRPC_PORT}."
+
+# --- TEMPORARY sleep removed, nc check restored ---
 
 # Define and export the global browser path (needed if Playwright is used by tools)
 export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers

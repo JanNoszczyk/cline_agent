@@ -989,88 +989,93 @@ message GrpcResponse {
 
 
 // =============================================================================
-// WebviewMessage Definition (Requests from Client) (Verified/Refined Step 6 & 8)
+// ClientMessage Definition (Requests from Client)
 // =============================================================================
 
+// Define the wrapper message for all client-to-server communication
+message ClientMessage {
+  // Use distinct field numbers for the oneof cases
+  oneof payload {
+    NewTaskRequest new_task = 1; // Corresponds to WebviewMessageType.NEW_TASK
+    AskResponseRequest ask_response = 2; // Corresponds to WebviewMessageType.ASK_RESPONSE
+    google.protobuf.Empty clear_task = 3; // Corresponds to WebviewMessageType.CLEAR_TASK
+    google.protobuf.Empty did_show_announcement = 4; // Corresponds to WebviewMessageType.DID_SHOW_ANNOUNCEMENT
+    // SELECT_IMAGES (UI action) - No direct message payload
+    google.protobuf.Empty export_current_task = 5; // Corresponds to WebviewMessageType.EXPORT_CURRENT_TASK
+    ShowTaskWithIdRequest show_task_with_id = 6; // Corresponds to WebviewMessageType.SHOW_TASK_WITH_ID
+    DeleteTaskWithIdRequest delete_task_with_id = 7; // Corresponds to WebviewMessageType.DELETE_TASK_WITH_ID
+    ExportTaskWithIdRequest export_task_with_id = 8; // Corresponds to WebviewMessageType.EXPORT_TASK_WITH_ID
+    google.protobuf.Empty reset_state = 9; // Corresponds to WebviewMessageType.RESET_STATE
+    google.protobuf.Empty request_ollama_models = 10; // Corresponds to WebviewMessageType.REQUEST_OLLAMA_MODELS
+    google.protobuf.Empty request_lm_studio_models = 11; // Corresponds to WebviewMessageType.REQUEST_LM_STUDIO_MODELS
+    OpenImageRequest open_image = 12; // Corresponds to WebviewMessageType.OPEN_IMAGE
+    OpenInBrowserRequest open_in_browser = 13; // Corresponds to WebviewMessageType.OPEN_IN_BROWSER
+    OpenFileRequest open_file = 14; // Corresponds to WebviewMessageType.OPEN_FILE
+    CreateRuleFileRequest create_rule_file = 15; // Corresponds to WebviewMessageType.CREATE_RULE_FILE
+    OpenMentionRequest open_mention = 16; // Corresponds to WebviewMessageType.OPEN_MENTION
+    google.protobuf.Empty cancel_task = 17; // Corresponds to WebviewMessageType.CANCEL_TASK
+    google.protobuf.Empty show_chat_view = 18; // Corresponds to WebviewMessageType.SHOW_CHAT_VIEW
+    google.protobuf.Empty refresh_open_router_models = 19; // Corresponds to WebviewMessageType.REFRESH_OPEN_ROUTER_MODELS
+    google.protobuf.Empty refresh_requesty_models = 20; // Corresponds to WebviewMessageType.REFRESH_REQUESTY_MODELS
+    google.protobuf.Empty refresh_open_ai_models = 21; // Corresponds to WebviewMessageType.REFRESH_OPEN_AI_MODELS
+    google.protobuf.Empty refresh_cline_rules = 22; // Corresponds to WebviewMessageType.REFRESH_CLINE_RULES
+    google.protobuf.Empty open_mcp_settings = 23; // Corresponds to WebviewMessageType.OPEN_MCP_SETTINGS
+    RestartMcpServerRequest restart_mcp_server = 24; // Corresponds to WebviewMessageType.RESTART_MCP_SERVER
+    DeleteMcpServerRequest delete_mcp_server = 25; // Corresponds to WebviewMessageType.DELETE_MCP_SERVER
+    ApplyAutoApprovalSettingsRequest auto_approval_settings = 26; // Corresponds to WebviewMessageType.AUTO_APPROVAL_SETTINGS
+    ApplyBrowserSettingsRequest browser_settings = 27; // Corresponds to WebviewMessageType.BROWSER_SETTINGS
+    google.protobuf.Empty toggle_plan_act_mode = 28; // Corresponds to WebviewMessageType.TOGGLE_PLAN_ACT_MODE
+    CheckpointRestoreRequest checkpoint_restore = 29; // Corresponds to WebviewMessageType.CHECKPOINT_RESTORE
+    google.protobuf.Empty task_completion_view_changes = 30; // Corresponds to WebviewMessageType.TASK_COMPLETION_VIEW_CHANGES
+    google.protobuf.Empty open_extension_settings = 31; // Corresponds to WebviewMessageType.OPEN_EXTENSION_SETTINGS
+    google.protobuf.Empty request_vs_code_lm_models = 32; // Corresponds to WebviewMessageType.REQUEST_VS_CODE_LM_MODELS
+    ToggleToolAutoApproveRequest toggle_tool_auto_approve = 33; // Corresponds to WebviewMessageType.TOGGLE_TOOL_AUTO_APPROVE
+    ToggleMcpServerRequest toggle_mcp_server = 34; // Corresponds to WebviewMessageType.TOGGLE_MCP_SERVER
+    google.protobuf.Empty get_latest_state = 35; // Corresponds to WebviewMessageType.GET_LATEST_STATE
+    google.protobuf.Empty account_login_clicked = 36; // Corresponds to WebviewMessageType.ACCOUNT_LOGIN_CLICKED
+    google.protobuf.Empty account_logout_clicked = 37; // Corresponds to WebviewMessageType.ACCOUNT_LOGOUT_CLICKED
+    google.protobuf.Empty show_account_view_clicked = 38; // Corresponds to WebviewMessageType.SHOW_ACCOUNT_VIEW_CLICKED
+    AuthStateChangedRequest auth_state_changed = 39; // Corresponds to WebviewMessageType.AUTH_STATE_CHANGED
+    AuthCallbackRequest auth_callback = 40; // Corresponds to WebviewMessageType.AUTH_CALLBACK
+    google.protobuf.Empty fetch_mcp_marketplace = 41; // Corresponds to WebviewMessageType.FETCH_MCP_MARKETPLACE
+    DownloadMcpRequest download_mcp = 42; // Corresponds to WebviewMessageType.DOWNLOAD_MCP
+    google.protobuf.Empty silently_refresh_mcp_marketplace = 43; // Corresponds to WebviewMessageType.SILENTLY_REFRESH_MCP_MARKETPLACE
+    SearchCommitsRequest search_commits = 44; // Corresponds to WebviewMessageType.SEARCH_COMMITS
+    ShowMcpViewRequest show_mcp_view = 45; // Corresponds to WebviewMessageType.SHOW_MCP_VIEW
+    google.protobuf.Empty fetch_latest_mcp_servers_from_hub = 46; // Corresponds to WebviewMessageType.FETCH_LATEST_MCP_SERVERS_FROM_HUB
+    ApplyTelemetrySettingRequest telemetry_setting = 47; // Corresponds to WebviewMessageType.TELEMETRY_SETTING
+    google.protobuf.Empty open_settings = 48; // Corresponds to WebviewMessageType.OPEN_SETTINGS
+    UpdateMcpTimeoutRequest update_mcp_timeout = 49; // Corresponds to WebviewMessageType.UPDATE_MCP_TIMEOUT
+    FetchOpenGraphDataRequest fetch_open_graph_data = 50; // Corresponds to WebviewMessageType.FETCH_OPEN_GRAPH_DATA
+    CheckIsImageUrlRequest check_is_image_url = 51; // Corresponds to WebviewMessageType.CHECK_IS_IMAGE_URL
+    InvokeRequest invoke = 52; // Corresponds to WebviewMessageType.INVOKE (used for user input)
+    UpdateSettingsRequest update_settings = 53; // Corresponds to WebviewMessageType.UPDATE_SETTINGS
+    google.protobuf.Empty clear_all_task_history = 54; // Corresponds to WebviewMessageType.CLEAR_ALL_TASK_HISTORY
+    google.protobuf.Empty fetch_user_credits_data = 55; // Corresponds to WebviewMessageType.FETCH_USER_CREDITS_DATA
+    OptionsResponseRequest options_response = 56; // Corresponds to WebviewMessageType.OPTIONS_RESPONSE
+    google.protobuf.Empty request_total_tasks_size = 57; // Corresponds to WebviewMessageType.REQUEST_TOTAL_TASKS_SIZE
+    google.protobuf.Empty relaunch_chrome_debug_mode = 58; // Corresponds to WebviewMessageType.RELAUNCH_CHROME_DEBUG_MODE
+    TaskFeedbackRequest task_feedback = 59; // Corresponds to WebviewMessageType.TASK_FEEDBACK
+    google.protobuf.Empty get_detected_chrome_path = 60; // Corresponds to WebviewMessageType.GET_DETECTED_CHROME_PATH
+    GetRelativePathsRequest get_relative_paths = 61; // Corresponds to WebviewMessageType.GET_RELATIVE_PATHS
+    SearchFilesRequest search_files = 62; // Corresponds to WebviewMessageType.SEARCH_FILES
+    ToggleFavoriteModelRequest toggle_favorite_model = 63; // Corresponds to WebviewMessageType.TOGGLE_FAVORITE_MODEL
+    GrpcRequest grpc_request = 64; // Corresponds to WebviewMessageType.GRPC_REQUEST
+    ToggleClineRuleRequest toggle_cline_rule = 65; // Corresponds to WebviewMessageType.TOGGLE_CLINE_RULE
+    DeleteClineRuleRequest delete_cline_rule = 66; // Corresponds to WebviewMessageType.DELETE_CLINE_RULE
+    google.protobuf.Empty condense = 67; // Corresponds to WebviewMessageType.CONDENSE
+    string copy_to_clipboard = 68; // Corresponds to WebviewMessageType.COPY_TO_CLIPBOARD (payload is string)
+    int32 update_terminal_connection_timeout = 69; // Corresponds to WebviewMessageType.UPDATE_TERMINAL_CONNECTION_TIMEOUT (payload is number)
+    // Add other WebviewMessage types as needed
+  }
+}
+
+
+// Remove the old enum WebviewMessageType
+/*
 enum WebviewMessageType {
   WEBVIEW_MESSAGE_TYPE_UNSPECIFIED = 0;
-  ADD_REMOTE_SERVER = 1;
-  API_CONFIGURATION = 2;
-  WEBVIEW_DID_LAUNCH = 3;
-  NEW_TASK = 4;
-  ASK_RESPONSE = 5;
-  CLEAR_TASK = 6;
-  DID_SHOW_ANNOUNCEMENT = 7;
-  SELECT_IMAGES = 8; // Note: This likely triggers a UI action, response comes via ExtensionMessage
-  EXPORT_CURRENT_TASK = 9;
-  SHOW_TASK_WITH_ID = 10;
-  DELETE_TASK_WITH_ID = 11;
-  EXPORT_TASK_WITH_ID = 12;
-  RESET_STATE = 13;
-  REQUEST_OLLAMA_MODELS = 14;
-  REQUEST_LM_STUDIO_MODELS = 15;
-  OPEN_IMAGE = 16;
-  OPEN_IN_BROWSER = 17;
-  OPEN_FILE = 18;
-  CREATE_RULE_FILE = 19;
-  OPEN_MENTION = 20;
-  CANCEL_TASK = 21;
-  SHOW_CHAT_VIEW = 22;
-  REFRESH_OPEN_ROUTER_MODELS = 23;
-  REFRESH_REQUESTY_MODELS = 24;
-  REFRESH_OPEN_AI_MODELS = 25;
-  REFRESH_CLINE_RULES = 26;
-  OPEN_MCP_SETTINGS = 27;
-  RESTART_MCP_SERVER = 28;
-  DELETE_MCP_SERVER = 29;
-  AUTO_APPROVAL_SETTINGS = 30;
-  BROWSER_SETTINGS = 31;
-  // BROWSER_RELAUNCH_RESULT = 32; // Removed - This is an ExtensionMessage type
-  TOGGLE_PLAN_ACT_MODE = 32; // Renumbered
-  CHECKPOINT_RESTORE = 33; // Renumbered
-  TASK_COMPLETION_VIEW_CHANGES = 34; // Renumbered
-  OPEN_EXTENSION_SETTINGS = 35; // Renumbered
-  REQUEST_VS_CODE_LM_MODELS = 36; // Renumbered
-  TOGGLE_TOOL_AUTO_APPROVE = 37; // Renumbered
-  TOGGLE_MCP_SERVER = 38; // Renumbered
-  GET_LATEST_STATE = 39; // Renumbered
-  ACCOUNT_LOGIN_CLICKED = 40; // Renumbered
-  ACCOUNT_LOGOUT_CLICKED = 41; // Renumbered
-  SHOW_ACCOUNT_VIEW_CLICKED = 42; // Renumbered
-  AUTH_STATE_CHANGED = 43; // Renumbered
-  AUTH_CALLBACK = 44; // Renumbered
-  FETCH_MCP_MARKETPLACE = 45; // Renumbered
-  DOWNLOAD_MCP = 46; // Renumbered
-  SILENTLY_REFRESH_MCP_MARKETPLACE = 47; // Renumbered
-  SEARCH_COMMITS = 48; // Renumbered
-  SHOW_MCP_VIEW = 49; // Renumbered
-  FETCH_LATEST_MCP_SERVERS_FROM_HUB = 50; // Renumbered
-  TELEMETRY_SETTING = 51; // Renumbered
-  OPEN_SETTINGS = 52; // Renumbered
-  UPDATE_MCP_TIMEOUT = 53; // Renumbered
-  FETCH_OPEN_GRAPH_DATA = 54; // Renumbered
-  CHECK_IS_IMAGE_URL = 55; // Renumbered
-  INVOKE = 56; // Renumbered
-  UPDATE_SETTINGS = 57; // Renumbered
-  CLEAR_ALL_TASK_HISTORY = 58; // Renumbered
-  FETCH_USER_CREDITS_DATA = 59; // Renumbered
-  OPTIONS_RESPONSE = 60; // Renumbered
-  REQUEST_TOTAL_TASKS_SIZE = 61; // Renumbered
-  RELAUNCH_CHROME_DEBUG_MODE = 62; // Renumbered
-  TASK_FEEDBACK = 63; // Renumbered
-  GET_DETECTED_CHROME_PATH = 64; // Renumbered
-  // DETECTED_CHROME_PATH = 66; // Removed - This is an ExtensionMessage type
-  // SCROLL_TO_SETTINGS = 67; // Removed - This is likely UI command, not message to backend logic
-  GET_RELATIVE_PATHS = 65; // Renumbered
-  SEARCH_FILES = 66; // Renumbered
-  TOGGLE_FAVORITE_MODEL = 67; // Renumbered
-  GRPC_REQUEST = 68; // Renumbered (Used for tunneling gRPC calls if needed)
-  TOGGLE_CLINE_RULE = 69; // Renumbered
-  DELETE_CLINE_RULE = 70; // Renumbered
-  CONDENSE = 71; // Added from WebviewMessage.ts
-  COPY_TO_CLIPBOARD = 72; // Added from WebviewMessage.ts
-  UPDATE_TERMINAL_CONNECTION_TIMEOUT = 73; // Added from WebviewMessage.ts
-}
+*/
 
 enum AskResponseType {
   ASK_RESPONSE_TYPE_UNSPECIFIED = 0;
