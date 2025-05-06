@@ -6,6 +6,18 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
+import {
+  type CallOptions,
+  ChannelCredentials,
+  Client,
+  type ClientOptions,
+  type ClientUnaryCall,
+  type handleUnaryCall,
+  makeGenericClientConstructor,
+  Metadata,
+  type ServiceError,
+  type UntypedServiceImplementation,
+} from "@grpc/grpc-js";
 import { StringRequest } from "./common";
 
 export const protobufPackage = "cline";
@@ -91,21 +103,49 @@ export const IsImageUrl: MessageFns<IsImageUrl> = {
   },
 };
 
-export type WebContentServiceDefinition = typeof WebContentServiceDefinition;
-export const WebContentServiceDefinition = {
-  name: "WebContentService",
-  fullName: "cline.WebContentService",
-  methods: {
-    checkIsImageUrl: {
-      name: "checkIsImageUrl",
-      requestType: StringRequest,
-      requestStream: false,
-      responseType: IsImageUrl,
-      responseStream: false,
-      options: {},
-    },
+export type WebContentServiceService = typeof WebContentServiceService;
+export const WebContentServiceService = {
+  checkIsImageUrl: {
+    path: "/cline.WebContentService/checkIsImageUrl",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: StringRequest) => Buffer.from(StringRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => StringRequest.decode(value),
+    responseSerialize: (value: IsImageUrl) => Buffer.from(IsImageUrl.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => IsImageUrl.decode(value),
   },
 } as const;
+
+export interface WebContentServiceServer extends UntypedServiceImplementation {
+  checkIsImageUrl: handleUnaryCall<StringRequest, IsImageUrl>;
+}
+
+export interface WebContentServiceClient extends Client {
+  checkIsImageUrl(
+    request: StringRequest,
+    callback: (error: ServiceError | null, response: IsImageUrl) => void,
+  ): ClientUnaryCall;
+  checkIsImageUrl(
+    request: StringRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: IsImageUrl) => void,
+  ): ClientUnaryCall;
+  checkIsImageUrl(
+    request: StringRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: IsImageUrl) => void,
+  ): ClientUnaryCall;
+}
+
+export const WebContentServiceClient = makeGenericClientConstructor(
+  WebContentServiceService,
+  "cline.WebContentService",
+) as unknown as {
+  new (address: string, credentials: ChannelCredentials, options?: Partial<ClientOptions>): WebContentServiceClient;
+  service: typeof WebContentServiceService;
+  serviceName: string;
+};
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 

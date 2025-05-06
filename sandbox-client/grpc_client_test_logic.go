@@ -170,18 +170,19 @@ func runGrpcTest(conn *grpc.ClientConn) {
 	expectedErrMsg := "Browser session is not available"
 	if err != nil {
 		st, ok := status.FromError(err)
-		// <<< Check for Unauthenticated error first
 		if ok && st.Code() == codes.Unauthenticated {
 			log.Printf("Error: Received Unauthenticated from getBrowserConnectionInfo: %v", err)
 			log.Println("gRPC Test Client finished with errors.")
 			os.Exit(1)
+		} else if ok && st.Code() == codes.Unimplemented {
+			log.Printf("Info: getBrowserConnectionInfo is Unimplemented on the server: %v", err)
+			// This is acceptable if the service/method is not yet implemented.
 		} else if ok && st.Code() == codes.Internal && strings.Contains(st.Message(), expectedErrMsg) {
 			log.Printf("Successfully received expected error for getBrowserConnectionInfo: %v", err)
 			// This is the expected behavior when no browser session is active, so continue the test.
 		} else {
 			// Unexpected error - Log it but don't exit, allow other tests to run
 			log.Printf("Warning: Unexpected error calling getBrowserConnectionInfo (continuing test): %v", err)
-			// os.Exit(1) // Removed exit call
 		}
 	} else {
 		// If there was NO error, log the received info (unexpected success in this test context)
@@ -217,12 +218,13 @@ func runGrpcTest(conn *grpc.ClientConn) {
 			log.Printf("Error: Received Unauthenticated from checkpointDiff: %v", err)
 			log.Println("gRPC Test Client finished with errors.")
 			os.Exit(1)
+		} else if ok && st.Code() == codes.Unimplemented {
+			log.Printf("Info: checkpointDiff is Unimplemented on the server: %v", err)
+			// This is acceptable if the service/method is not yet implemented.
+		} else {
+			// Log other errors but don't necessarily fail the whole test for this example
+			log.Printf("Warning: Error calling checkpointDiff(1): %v", err)
 		}
-		// Log other errors but don't necessarily fail the whole test for this example
-		log.Printf("Warning: Error calling checkpointDiff(1): %v", err)
-		// If this call MUST succeed, uncomment the next lines:
-		// log.Println("gRPC Test Client finished with errors during checkpointDiff.")
-		// os.Exit(1)
 	} else {
 		log.Println("checkpointDiff(1) call succeeded (no error returned).")
 	}
@@ -244,8 +246,12 @@ func runGrpcTest(conn *grpc.ClientConn) {
 			log.Printf("Error: Received Unauthenticated from toggleMcpServer: %v", err)
 			log.Println("gRPC Test Client finished with errors.")
 			os.Exit(1)
+		} else if ok && st.Code() == codes.Unimplemented {
+			log.Printf("Info: toggleMcpServer is Unimplemented on the server: %v", err)
+			// This is acceptable if the service/method is not yet implemented.
+		} else {
+			log.Printf("Warning: Error calling toggleMcpServer('context7', true): %v", err)
 		}
-		log.Printf("Warning: Error calling toggleMcpServer('context7', true): %v", err)
 	} else {
 		log.Printf("toggleMcpServer('context7', true) call succeeded. Response has %d servers.", len(mcpResp.GetMcpServers()))
 	}
@@ -296,20 +302,28 @@ func runGrpcTest(conn *grpc.ClientConn) {
 					return
 				}
 				log.Printf("[gRPC-Info: GoClient:runGrpcTest:StartRecvLoop] Received message: Type=%s", resp.GetType())
-				// Detailed logging (can reuse previous switch logic if needed)
-				switch pl := resp.Payload.(type) {
-				case *tpb.ExtensionMessage_TaskStarted: // <<< Use tpb alias
-					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: TaskStarted={task_id: %s, version: %s}", pl.TaskStarted.GetTaskId(), pl.TaskStarted.GetVersion())
-				case *tpb.ExtensionMessage_State: // <<< Use tpb alias
-					if pl.State != nil {
-						log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: State={version: %s, currentTaskItem: %v, ...}", pl.State.GetVersion(), pl.State.GetCurrentTaskItem().GetId())
-					} else {
-						log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: State is nil")
+				if resp.GetType() == tpb.ExtensionMessageType_TASK_STARTED {
+					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop] Detailed TASK_STARTED ExtensionMessage received: %#v", resp)
+					taskStartedFromPayload := resp.GetTaskStarted()
+					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   resp.GetTaskStarted() result: %#v", taskStartedFromPayload)
+					if taskStartedFromPayload != nil {
+						log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   taskStartedFromPayload.GetTaskId(): %s", taskStartedFromPayload.GetTaskId())
+						log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   taskStartedFromPayload.GetVersion(): %s", taskStartedFromPayload.GetVersion())
 					}
-				case *tpb.ExtensionMessage_PartialMessage: // <<< Use tpb alias
-					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: PartialMessage={type: %s, text_len: %d}", pl.PartialMessage.GetType(), len(pl.PartialMessage.GetText()))
-				default:
-					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: Other type (%T) or nil", pl)
+				} else {
+					// Detailed logging for other types (can reuse previous switch logic if needed)
+					switch pl := resp.Payload.(type) {
+					case *tpb.ExtensionMessage_State: // <<< Use tpb alias
+						if pl.State != nil {
+							log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: State={version: %s, currentTaskItem: %v, ...}", pl.State.GetVersion(), pl.State.GetCurrentTaskItem().GetId())
+						} else {
+							log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: State is nil")
+						}
+					case *tpb.ExtensionMessage_PartialMessage: // <<< Use tpb alias
+						log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: PartialMessage={type: %s, text_len: %d}", pl.PartialMessage.GetType(), len(pl.PartialMessage.GetText()))
+					default:
+						log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartRecvLoop]   Payload: Other type (%T) or nil for message type %s", pl, resp.GetType())
+					}
 				}
 				startMsgChan <- resp
 			}
@@ -329,8 +343,9 @@ func runGrpcTest(conn *grpc.ClientConn) {
 			case resp := <-startMsgChan:
 				log.Printf("[gRPC-Info: GoClient:runGrpcTest:StartSelectLoop] Processing message type: %s", resp.GetType())
 				if resp.GetType() == tpb.ExtensionMessageType_TASK_STARTED { // <<< Use tpb alias
+					// Logging is now more detailed in the receiving goroutine
 					taskStartedPayload := resp.GetTaskStarted()
-					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartSelectLoop] Received TASK_STARTED payload: %+v", taskStartedPayload)
+					// log.Printf("[gRPC-Debug: GoClient:runGrpcTest:StartSelectLoop] Received TASK_STARTED payload: %+v", taskStartedPayload) // Already logged above
 					if taskStartedPayload != nil && taskStartedPayload.GetTaskId() != "" {
 						receivedTaskID = taskStartedPayload.GetTaskId()
 						receivedVersion = taskStartedPayload.GetVersion()

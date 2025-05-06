@@ -1,48 +1,44 @@
-# Active Context: Cline gRPC `StartTask` RPC Fix
+# Active Context: gRPC Deserialization and Server Startup Troubleshooting
 
 ## 1. Current Focus
 
-The primary focus has shifted to resolving why the Go gRPC client (`sandbox-binary`) receives the `TASK_STARTED` message from Cline's gRPC server but fails to parse/access its payload (specifically `taskId` and `version`), resulting in a timeout.
+Resolve issues related to gRPC communication between a Node.js server (Cline VSCode extension) and a Go client (`sandbox-client`). The primary problem was the Go client failing to deserialize a `TaskStartedInfo` payload. Subsequent fixes led to server startup issues, which were then addressed. The current step is to test these fixes.
 
 ## 2. Problem History Recap
 
-*   Initially, the Go client's `StartTask` test timed out waiting for any `TASK_STARTED` message. This was attributed to a timing issue with event emission vs. listening in `GrpcBridge.ts`.
-*   Refactoring `GrpcBridge.ts` to directly send `TASK_STARTED` after `initTask` successfully made the server send the message.
-*   **Current Issue:** The Go client now receives the `TASK_STARTED` message *type*, but the `TaskStartedInfo` payload within it appears as `nil` to the client, leading to a continued timeout as it cannot extract the `taskId`.
+*   **Original Problem:** Go client received `nil` for `oneof payload { TaskStartedInfo task_started = 38; ... }` from the Node.js server.
+*   **Diagnostic Step for `oneof`:** `TaskStartedInfo task_started` was moved out of the `oneof payload` in `proto/task_control.proto` and made a direct optional field.
+*   **gRPC Server Startup Issue:** After regenerating protos, the Node.js gRPC server failed to start due to `ts-proto`'s `outputServices=generic-definitions` option.
+    *   **Fix 1:** Changed `ts-proto` option in `proto/build-proto.js` to `outputServices=grpc-js`.
+    *   **Fix 2:** Updated `src/services/grpc/server.ts` to use new `*ServiceService` imports and removed `as any` casts.
+    *   **Fix 3:** Updated `webview-ui/src/services/grpc-client.ts` (mock client) for new service definitions and type lookups.
+*   **Go Client `go.mod`:** Updated gRPC library versions.
+*   **"Unimplemented" RPC Method Errors:** After the above fixes, the Go client reported "Unimplemented" for `updateSettings` and then `startTask`. This was traced to PascalCase keys (e.g., `UpdateSettings`, `StartTask`) in the `serviceImplementations.taskControl` object in `src/services/grpc/GrpcBridge.ts`, while `@grpc/grpc-js` expects camelCase keys (e.g., `updateSettings`, `startTask`). These keys were corrected to camelCase.
 
 ## 3. Recent Changes (This Session)
 
 *   **`src/services/grpc/GrpcBridge.ts`:**
-    *   **`initTask` method:**
-        *   Modified to return `Promise<Task | undefined>` and the `taskInstance` directly.
-        *   Removed `taskInitialized` event emission.
-    *   **`StartTask` RPC Handler:**
-        *   Refactored to `await this.initTask(...)`.
-        *   If successful, immediately sends `TASK_STARTED` using the returned `taskInstance.taskId`.
-        *   Sets up task-specific listeners on `grpcNotifier` for subsequent messages and uses `taskInstance.onDispose()` for cleanup.
-    *   **`ExtensionMessage` Construction (Attempted Fix):**
-        *   Simplified the construction of `ExtensionMessage` objects (for `TASK_STARTED`, `ERROR`, and listener messages within `StartTask`) by only including the `type` and the specific `oneof` payload field, omitting other `undefined` `oneof` fields. This was an attempt to address the `nil` payload issue on the Go client. **This change did not resolve the nil payload issue.**
+    *   Changed the key for the `UpdateSettings` RPC handler from `UpdateSettings` to `updateSettings` in the `taskControl` service implementation.
+    *   Changed the key for the `StartTask` RPC handler from `StartTask` to `startTask` in the `taskControl` service implementation.
+*   **Build & Test Cycle:**
+    *   Ran `bash scripts/update-sandbox-vsix.sh` to rebuild the extension.
+    *   Ran `docker compose up --build --force-recreate sandbox-client`. The terminal for this command was interrupted/restarted.
 
-*   **`src/core/task/index.ts` (`Task` class):**
-    *   Added `public isDisposed = false;`.
-    *   `abortTask()` now sets `this.isDisposed = true;`.
+## 4. Next Steps (Current)
 
-## 4. Next Steps
-
-1.  **AI Action (Memory Bank):** Update all Memory Bank files to reflect the current state (this step).
-2.  **AI Action (Analysis):** Examine the Go client code (`sandbox-client/grpc_client_test_logic.go`) to understand how it attempts to access the `TaskStartedInfo` payload from the `ExtensionMessage`'s `oneof` field.
-3.  **AI Action (Hypothesis):** Formulate a hypothesis for why the Go client sees a `nil` payload (e.g., incorrect field access method for `oneof` in Go, subtle serialization/deserialization mismatch between `ts-proto` and Go Protobuf).
-4.  **AI Action (Plan):** Propose changes to either the Go client or, if necessary, further adjustments to the server-side message construction or Protobuf definitions based on the Go client analysis.
-5.  **User Action:** Implement proposed changes.
-6.  **User Action:** Re-run build and test:
-    *   `bash scripts/update-sandbox-vsix.sh`
-    *   `docker compose build --no-cache sandbox-client`
-    *   `docker compose up --force-recreate -d sandbox-client`
-7.  **User Action:** Provide new Docker logs.
-8.  **AI Action:** Analyze logs and iterate.
+1.  **User Action:** Provide the complete logs from the `sandbox-client-1` container from the most recent `docker compose up` execution.
+2.  **AI Action (Analysis):** Analyze the Docker logs to:
+    *   Confirm the gRPC server starts correctly.
+    *   Verify if the `UpdateSettings` RPC call is now successful.
+    *   Verify if the `StartTask` RPC call is now successful.
+    *   Check if the `TASK_STARTED` message is received by the Go client with a non-nil `task_started` payload.
+3.  **AI Action (Hypothesis/Plan):**
+    *   If `TASK_STARTED` is successful: Discuss long-term solutions (e.g., updating Node.js `protoc` version to potentially resolve original `oneof` issue) vs. keeping the `task_started` field direct.
+    *   If `TASK_STARTED` still fails (payload `nil` or other errors): The problem is deeper. Further investigation into serialization/deserialization or message construction will be needed.
+    *   If server fails to start: Analyze VSCode extension logs (from `/tmp/grpc_server_debug.log` in the container).
 
 ## 5. Active Decisions & Considerations
 
-*   The issue is likely related to how `oneof` payloads are handled/accessed between `ts-proto` (server-side JavaScript/TypeScript) and Go's Protobuf libraries (client-side).
-*   Simplifying the `ExtensionMessage` construction on the server by removing explicit `undefined` fields for the `oneof` did not fix the problem, suggesting the issue is not merely about extraneous `undefined` fields but potentially about the fundamental way the `oneof` is structured or accessed.
-*   The server-side logs consistently show the `TASK_STARTED` message being prepared with the correct `taskId` and `version` before being written to the stream.
+*   The primary hypothesis for the "Unimplemented" errors was the case mismatch in RPC handler keys in `GrpcBridge.ts`, which has now been addressed for both `UpdateSettings` and `StartTask`.
+*   The original `oneof` deserialization issue might still be present if the `StartTask` call succeeds but the `task_started` payload is `nil`.
+*   The `docker compose up` command was interrupted, so the latest test results are pending.

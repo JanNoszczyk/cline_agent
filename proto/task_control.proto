@@ -853,6 +853,9 @@ message ExtensionMessage {
   message FileSearchResultListWrapper { repeated FileSearchResult results = 1; }
 
   // The 'oneof' defines the *specific* payload based on the 'type' field
+  // Temporarily making task_started a direct field for debugging oneof issue
+  optional TaskStartedInfo task_started = 38;       // type=TASK_STARTED (39)
+
   oneof payload {
     ExtensionState state = 4;                // type=STATE (1)
     ClineMessage partial_message = 5;      // type=PARTIAL_MESSAGE (2)
@@ -892,7 +895,7 @@ message ExtensionMessage {
     RelativePathsResponsePayload relative_paths_response = 35; // type=RELATIVE_PATHS_RESPONSE (36)
     FileSearchResultListWrapper file_search_results = 36; // type=FILE_SEARCH_RESULTS (37)
     GrpcResponse grpc_response = 37;         // type=GRPC_RESPONSE (38)
-    TaskStartedInfo task_started = 38;       // type=TASK_STARTED (39)
+    // TaskStartedInfo task_started = 38; // Moved out of oneof
   }
 }
 

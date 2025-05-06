@@ -57,7 +57,7 @@ async function main() {
 			protoc,
 			`--plugin=protoc-gen-ts_proto="${tsProtoPlugin}"`,
 			`--ts_proto_out="${TS_OUT_DIR}"`,
-			"--ts_proto_opt=outputServices=generic-definitions,env=node,esModuleInterop=true,useDate=false,useOptionals=messages",
+			"--ts_proto_opt=outputServices=grpc-js,env=node,esModuleInterop=true,useDate=false,useOptionals=messages",
 			`--proto_path="${SCRIPT_DIR}"`,
 			`"${path.join(SCRIPT_DIR, protoFile)}"`,
 		].join(" ")

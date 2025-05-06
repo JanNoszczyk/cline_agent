@@ -6,12 +6,24 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { Empty, Int64Request, Metadata } from "./common";
+import {
+  type CallOptions,
+  ChannelCredentials,
+  Client,
+  type ClientOptions,
+  type ClientUnaryCall,
+  type handleUnaryCall,
+  makeGenericClientConstructor,
+  Metadata,
+  type ServiceError,
+  type UntypedServiceImplementation,
+} from "@grpc/grpc-js";
+import { Empty, Int64Request, Metadata as Metadata1 } from "./common";
 
 export const protobufPackage = "cline";
 
 export interface CheckpointRestoreRequest {
-  metadata?: Metadata | undefined;
+  metadata?: Metadata1 | undefined;
   number: number;
   restoreType: string;
   offset?: number | undefined;
@@ -24,7 +36,7 @@ function createBaseCheckpointRestoreRequest(): CheckpointRestoreRequest {
 export const CheckpointRestoreRequest: MessageFns<CheckpointRestoreRequest> = {
   encode(message: CheckpointRestoreRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.metadata !== undefined) {
-      Metadata.encode(message.metadata, writer.uint32(10).fork()).join();
+      Metadata1.encode(message.metadata, writer.uint32(10).fork()).join();
     }
     if (message.number !== 0) {
       writer.uint32(16).int64(message.number);
@@ -50,7 +62,7 @@ export const CheckpointRestoreRequest: MessageFns<CheckpointRestoreRequest> = {
             break;
           }
 
-          message.metadata = Metadata.decode(reader, reader.uint32());
+          message.metadata = Metadata1.decode(reader, reader.uint32());
           continue;
         }
         case 2: {
@@ -88,7 +100,7 @@ export const CheckpointRestoreRequest: MessageFns<CheckpointRestoreRequest> = {
 
   fromJSON(object: any): CheckpointRestoreRequest {
     return {
-      metadata: isSet(object.metadata) ? Metadata.fromJSON(object.metadata) : undefined,
+      metadata: isSet(object.metadata) ? Metadata1.fromJSON(object.metadata) : undefined,
       number: isSet(object.number) ? globalThis.Number(object.number) : 0,
       restoreType: isSet(object.restoreType) ? globalThis.String(object.restoreType) : "",
       offset: isSet(object.offset) ? globalThis.Number(object.offset) : undefined,
@@ -98,7 +110,7 @@ export const CheckpointRestoreRequest: MessageFns<CheckpointRestoreRequest> = {
   toJSON(message: CheckpointRestoreRequest): unknown {
     const obj: any = {};
     if (message.metadata !== undefined) {
-      obj.metadata = Metadata.toJSON(message.metadata);
+      obj.metadata = Metadata1.toJSON(message.metadata);
     }
     if (message.number !== 0) {
       obj.number = Math.round(message.number);
@@ -118,7 +130,7 @@ export const CheckpointRestoreRequest: MessageFns<CheckpointRestoreRequest> = {
   fromPartial<I extends Exact<DeepPartial<CheckpointRestoreRequest>, I>>(object: I): CheckpointRestoreRequest {
     const message = createBaseCheckpointRestoreRequest();
     message.metadata = (object.metadata !== undefined && object.metadata !== null)
-      ? Metadata.fromPartial(object.metadata)
+      ? Metadata1.fromPartial(object.metadata)
       : undefined;
     message.number = object.number ?? 0;
     message.restoreType = object.restoreType ?? "";
@@ -127,29 +139,74 @@ export const CheckpointRestoreRequest: MessageFns<CheckpointRestoreRequest> = {
   },
 };
 
-export type CheckpointsServiceDefinition = typeof CheckpointsServiceDefinition;
-export const CheckpointsServiceDefinition = {
-  name: "CheckpointsService",
-  fullName: "cline.CheckpointsService",
-  methods: {
-    checkpointDiff: {
-      name: "checkpointDiff",
-      requestType: Int64Request,
-      requestStream: false,
-      responseType: Empty,
-      responseStream: false,
-      options: {},
-    },
-    checkpointRestore: {
-      name: "checkpointRestore",
-      requestType: CheckpointRestoreRequest,
-      requestStream: false,
-      responseType: Empty,
-      responseStream: false,
-      options: {},
-    },
+export type CheckpointsServiceService = typeof CheckpointsServiceService;
+export const CheckpointsServiceService = {
+  checkpointDiff: {
+    path: "/cline.CheckpointsService/checkpointDiff",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: Int64Request) => Buffer.from(Int64Request.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => Int64Request.decode(value),
+    responseSerialize: (value: Empty) => Buffer.from(Empty.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => Empty.decode(value),
+  },
+  checkpointRestore: {
+    path: "/cline.CheckpointsService/checkpointRestore",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: CheckpointRestoreRequest) => Buffer.from(CheckpointRestoreRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => CheckpointRestoreRequest.decode(value),
+    responseSerialize: (value: Empty) => Buffer.from(Empty.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => Empty.decode(value),
   },
 } as const;
+
+export interface CheckpointsServiceServer extends UntypedServiceImplementation {
+  checkpointDiff: handleUnaryCall<Int64Request, Empty>;
+  checkpointRestore: handleUnaryCall<CheckpointRestoreRequest, Empty>;
+}
+
+export interface CheckpointsServiceClient extends Client {
+  checkpointDiff(
+    request: Int64Request,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  checkpointDiff(
+    request: Int64Request,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  checkpointDiff(
+    request: Int64Request,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  checkpointRestore(
+    request: CheckpointRestoreRequest,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  checkpointRestore(
+    request: CheckpointRestoreRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  checkpointRestore(
+    request: CheckpointRestoreRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+}
+
+export const CheckpointsServiceClient = makeGenericClientConstructor(
+  CheckpointsServiceService,
+  "cline.CheckpointsService",
+) as unknown as {
+  new (address: string, credentials: ChannelCredentials, options?: Partial<ClientOptions>): CheckpointsServiceClient;
+  service: typeof CheckpointsServiceService;
+  serviceName: string;
+};
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 

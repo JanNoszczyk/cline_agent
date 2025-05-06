@@ -6,7 +6,19 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { Metadata } from "./common";
+import {
+  type CallOptions,
+  ChannelCredentials,
+  Client,
+  type ClientOptions,
+  type ClientUnaryCall,
+  type handleUnaryCall,
+  makeGenericClientConstructor,
+  Metadata,
+  type ServiceError,
+  type UntypedServiceImplementation,
+} from "@grpc/grpc-js";
+import { Metadata as Metadata1 } from "./common";
 
 export const protobufPackage = "cline";
 
@@ -54,19 +66,19 @@ export function mcpServerStatusToJSON(object: McpServerStatus): string {
 }
 
 export interface ToggleMcpServerRequest {
-  metadata?: Metadata | undefined;
+  metadata?: Metadata1 | undefined;
   serverName: string;
   disabled: boolean;
 }
 
 export interface UpdateMcpTimeoutRequest {
-  metadata?: Metadata | undefined;
+  metadata?: Metadata1 | undefined;
   serverName: string;
   timeout: number;
 }
 
 export interface AddRemoteMcpServerRequest {
-  metadata?: Metadata | undefined;
+  metadata?: Metadata1 | undefined;
   serverName: string;
   serverUrl: string;
 }
@@ -115,7 +127,7 @@ function createBaseToggleMcpServerRequest(): ToggleMcpServerRequest {
 export const ToggleMcpServerRequest: MessageFns<ToggleMcpServerRequest> = {
   encode(message: ToggleMcpServerRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.metadata !== undefined) {
-      Metadata.encode(message.metadata, writer.uint32(10).fork()).join();
+      Metadata1.encode(message.metadata, writer.uint32(10).fork()).join();
     }
     if (message.serverName !== "") {
       writer.uint32(18).string(message.serverName);
@@ -138,7 +150,7 @@ export const ToggleMcpServerRequest: MessageFns<ToggleMcpServerRequest> = {
             break;
           }
 
-          message.metadata = Metadata.decode(reader, reader.uint32());
+          message.metadata = Metadata1.decode(reader, reader.uint32());
           continue;
         }
         case 2: {
@@ -168,7 +180,7 @@ export const ToggleMcpServerRequest: MessageFns<ToggleMcpServerRequest> = {
 
   fromJSON(object: any): ToggleMcpServerRequest {
     return {
-      metadata: isSet(object.metadata) ? Metadata.fromJSON(object.metadata) : undefined,
+      metadata: isSet(object.metadata) ? Metadata1.fromJSON(object.metadata) : undefined,
       serverName: isSet(object.serverName) ? globalThis.String(object.serverName) : "",
       disabled: isSet(object.disabled) ? globalThis.Boolean(object.disabled) : false,
     };
@@ -177,7 +189,7 @@ export const ToggleMcpServerRequest: MessageFns<ToggleMcpServerRequest> = {
   toJSON(message: ToggleMcpServerRequest): unknown {
     const obj: any = {};
     if (message.metadata !== undefined) {
-      obj.metadata = Metadata.toJSON(message.metadata);
+      obj.metadata = Metadata1.toJSON(message.metadata);
     }
     if (message.serverName !== "") {
       obj.serverName = message.serverName;
@@ -194,7 +206,7 @@ export const ToggleMcpServerRequest: MessageFns<ToggleMcpServerRequest> = {
   fromPartial<I extends Exact<DeepPartial<ToggleMcpServerRequest>, I>>(object: I): ToggleMcpServerRequest {
     const message = createBaseToggleMcpServerRequest();
     message.metadata = (object.metadata !== undefined && object.metadata !== null)
-      ? Metadata.fromPartial(object.metadata)
+      ? Metadata1.fromPartial(object.metadata)
       : undefined;
     message.serverName = object.serverName ?? "";
     message.disabled = object.disabled ?? false;
@@ -209,7 +221,7 @@ function createBaseUpdateMcpTimeoutRequest(): UpdateMcpTimeoutRequest {
 export const UpdateMcpTimeoutRequest: MessageFns<UpdateMcpTimeoutRequest> = {
   encode(message: UpdateMcpTimeoutRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.metadata !== undefined) {
-      Metadata.encode(message.metadata, writer.uint32(10).fork()).join();
+      Metadata1.encode(message.metadata, writer.uint32(10).fork()).join();
     }
     if (message.serverName !== "") {
       writer.uint32(18).string(message.serverName);
@@ -232,7 +244,7 @@ export const UpdateMcpTimeoutRequest: MessageFns<UpdateMcpTimeoutRequest> = {
             break;
           }
 
-          message.metadata = Metadata.decode(reader, reader.uint32());
+          message.metadata = Metadata1.decode(reader, reader.uint32());
           continue;
         }
         case 2: {
@@ -262,7 +274,7 @@ export const UpdateMcpTimeoutRequest: MessageFns<UpdateMcpTimeoutRequest> = {
 
   fromJSON(object: any): UpdateMcpTimeoutRequest {
     return {
-      metadata: isSet(object.metadata) ? Metadata.fromJSON(object.metadata) : undefined,
+      metadata: isSet(object.metadata) ? Metadata1.fromJSON(object.metadata) : undefined,
       serverName: isSet(object.serverName) ? globalThis.String(object.serverName) : "",
       timeout: isSet(object.timeout) ? globalThis.Number(object.timeout) : 0,
     };
@@ -271,7 +283,7 @@ export const UpdateMcpTimeoutRequest: MessageFns<UpdateMcpTimeoutRequest> = {
   toJSON(message: UpdateMcpTimeoutRequest): unknown {
     const obj: any = {};
     if (message.metadata !== undefined) {
-      obj.metadata = Metadata.toJSON(message.metadata);
+      obj.metadata = Metadata1.toJSON(message.metadata);
     }
     if (message.serverName !== "") {
       obj.serverName = message.serverName;
@@ -288,7 +300,7 @@ export const UpdateMcpTimeoutRequest: MessageFns<UpdateMcpTimeoutRequest> = {
   fromPartial<I extends Exact<DeepPartial<UpdateMcpTimeoutRequest>, I>>(object: I): UpdateMcpTimeoutRequest {
     const message = createBaseUpdateMcpTimeoutRequest();
     message.metadata = (object.metadata !== undefined && object.metadata !== null)
-      ? Metadata.fromPartial(object.metadata)
+      ? Metadata1.fromPartial(object.metadata)
       : undefined;
     message.serverName = object.serverName ?? "";
     message.timeout = object.timeout ?? 0;
@@ -303,7 +315,7 @@ function createBaseAddRemoteMcpServerRequest(): AddRemoteMcpServerRequest {
 export const AddRemoteMcpServerRequest: MessageFns<AddRemoteMcpServerRequest> = {
   encode(message: AddRemoteMcpServerRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.metadata !== undefined) {
-      Metadata.encode(message.metadata, writer.uint32(10).fork()).join();
+      Metadata1.encode(message.metadata, writer.uint32(10).fork()).join();
     }
     if (message.serverName !== "") {
       writer.uint32(18).string(message.serverName);
@@ -326,7 +338,7 @@ export const AddRemoteMcpServerRequest: MessageFns<AddRemoteMcpServerRequest> = 
             break;
           }
 
-          message.metadata = Metadata.decode(reader, reader.uint32());
+          message.metadata = Metadata1.decode(reader, reader.uint32());
           continue;
         }
         case 2: {
@@ -356,7 +368,7 @@ export const AddRemoteMcpServerRequest: MessageFns<AddRemoteMcpServerRequest> = 
 
   fromJSON(object: any): AddRemoteMcpServerRequest {
     return {
-      metadata: isSet(object.metadata) ? Metadata.fromJSON(object.metadata) : undefined,
+      metadata: isSet(object.metadata) ? Metadata1.fromJSON(object.metadata) : undefined,
       serverName: isSet(object.serverName) ? globalThis.String(object.serverName) : "",
       serverUrl: isSet(object.serverUrl) ? globalThis.String(object.serverUrl) : "",
     };
@@ -365,7 +377,7 @@ export const AddRemoteMcpServerRequest: MessageFns<AddRemoteMcpServerRequest> = 
   toJSON(message: AddRemoteMcpServerRequest): unknown {
     const obj: any = {};
     if (message.metadata !== undefined) {
-      obj.metadata = Metadata.toJSON(message.metadata);
+      obj.metadata = Metadata1.toJSON(message.metadata);
     }
     if (message.serverName !== "") {
       obj.serverName = message.serverName;
@@ -382,7 +394,7 @@ export const AddRemoteMcpServerRequest: MessageFns<AddRemoteMcpServerRequest> = 
   fromPartial<I extends Exact<DeepPartial<AddRemoteMcpServerRequest>, I>>(object: I): AddRemoteMcpServerRequest {
     const message = createBaseAddRemoteMcpServerRequest();
     message.metadata = (object.metadata !== undefined && object.metadata !== null)
-      ? Metadata.fromPartial(object.metadata)
+      ? Metadata1.fromPartial(object.metadata)
       : undefined;
     message.serverName = object.serverName ?? "";
     message.serverUrl = object.serverUrl ?? "";
@@ -978,37 +990,97 @@ export const McpServers: MessageFns<McpServers> = {
   },
 };
 
-export type McpServiceDefinition = typeof McpServiceDefinition;
-export const McpServiceDefinition = {
-  name: "McpService",
-  fullName: "cline.McpService",
-  methods: {
-    toggleMcpServer: {
-      name: "toggleMcpServer",
-      requestType: ToggleMcpServerRequest,
-      requestStream: false,
-      responseType: McpServers,
-      responseStream: false,
-      options: {},
-    },
-    updateMcpTimeout: {
-      name: "updateMcpTimeout",
-      requestType: UpdateMcpTimeoutRequest,
-      requestStream: false,
-      responseType: McpServers,
-      responseStream: false,
-      options: {},
-    },
-    addRemoteMcpServer: {
-      name: "addRemoteMcpServer",
-      requestType: AddRemoteMcpServerRequest,
-      requestStream: false,
-      responseType: McpServers,
-      responseStream: false,
-      options: {},
-    },
+export type McpServiceService = typeof McpServiceService;
+export const McpServiceService = {
+  toggleMcpServer: {
+    path: "/cline.McpService/toggleMcpServer",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: ToggleMcpServerRequest) => Buffer.from(ToggleMcpServerRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => ToggleMcpServerRequest.decode(value),
+    responseSerialize: (value: McpServers) => Buffer.from(McpServers.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => McpServers.decode(value),
+  },
+  updateMcpTimeout: {
+    path: "/cline.McpService/updateMcpTimeout",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: UpdateMcpTimeoutRequest) => Buffer.from(UpdateMcpTimeoutRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => UpdateMcpTimeoutRequest.decode(value),
+    responseSerialize: (value: McpServers) => Buffer.from(McpServers.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => McpServers.decode(value),
+  },
+  addRemoteMcpServer: {
+    path: "/cline.McpService/addRemoteMcpServer",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: AddRemoteMcpServerRequest) =>
+      Buffer.from(AddRemoteMcpServerRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => AddRemoteMcpServerRequest.decode(value),
+    responseSerialize: (value: McpServers) => Buffer.from(McpServers.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => McpServers.decode(value),
   },
 } as const;
+
+export interface McpServiceServer extends UntypedServiceImplementation {
+  toggleMcpServer: handleUnaryCall<ToggleMcpServerRequest, McpServers>;
+  updateMcpTimeout: handleUnaryCall<UpdateMcpTimeoutRequest, McpServers>;
+  addRemoteMcpServer: handleUnaryCall<AddRemoteMcpServerRequest, McpServers>;
+}
+
+export interface McpServiceClient extends Client {
+  toggleMcpServer(
+    request: ToggleMcpServerRequest,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+  toggleMcpServer(
+    request: ToggleMcpServerRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+  toggleMcpServer(
+    request: ToggleMcpServerRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+  updateMcpTimeout(
+    request: UpdateMcpTimeoutRequest,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+  updateMcpTimeout(
+    request: UpdateMcpTimeoutRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+  updateMcpTimeout(
+    request: UpdateMcpTimeoutRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+  addRemoteMcpServer(
+    request: AddRemoteMcpServerRequest,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+  addRemoteMcpServer(
+    request: AddRemoteMcpServerRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+  addRemoteMcpServer(
+    request: AddRemoteMcpServerRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: McpServers) => void,
+  ): ClientUnaryCall;
+}
+
+export const McpServiceClient = makeGenericClientConstructor(McpServiceService, "cline.McpService") as unknown as {
+  new (address: string, credentials: ChannelCredentials, options?: Partial<ClientOptions>): McpServiceClient;
+  service: typeof McpServiceService;
+  serviceName: string;
+};
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 

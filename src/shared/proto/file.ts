@@ -6,7 +6,19 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { Empty, Metadata, StringRequest } from "./common";
+import {
+  type CallOptions,
+  ChannelCredentials,
+  Client,
+  type ClientOptions,
+  type ClientUnaryCall,
+  type handleUnaryCall,
+  makeGenericClientConstructor,
+  Metadata,
+  type ServiceError,
+  type UntypedServiceImplementation,
+} from "@grpc/grpc-js";
+import { Empty, Metadata as Metadata1, StringRequest } from "./common";
 
 export const protobufPackage = "cline";
 
@@ -27,7 +39,7 @@ export interface GitCommit {
 /** Unified request for all rule file operations */
 export interface RuleFileRequest {
   metadata?:
-    | Metadata
+    | Metadata1
     | undefined;
   /** Common field for all operations */
   isGlobal: boolean;
@@ -240,7 +252,7 @@ function createBaseRuleFileRequest(): RuleFileRequest {
 export const RuleFileRequest: MessageFns<RuleFileRequest> = {
   encode(message: RuleFileRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.metadata !== undefined) {
-      Metadata.encode(message.metadata, writer.uint32(10).fork()).join();
+      Metadata1.encode(message.metadata, writer.uint32(10).fork()).join();
     }
     if (message.isGlobal !== false) {
       writer.uint32(16).bool(message.isGlobal);
@@ -266,7 +278,7 @@ export const RuleFileRequest: MessageFns<RuleFileRequest> = {
             break;
           }
 
-          message.metadata = Metadata.decode(reader, reader.uint32());
+          message.metadata = Metadata1.decode(reader, reader.uint32());
           continue;
         }
         case 2: {
@@ -304,7 +316,7 @@ export const RuleFileRequest: MessageFns<RuleFileRequest> = {
 
   fromJSON(object: any): RuleFileRequest {
     return {
-      metadata: isSet(object.metadata) ? Metadata.fromJSON(object.metadata) : undefined,
+      metadata: isSet(object.metadata) ? Metadata1.fromJSON(object.metadata) : undefined,
       isGlobal: isSet(object.isGlobal) ? globalThis.Boolean(object.isGlobal) : false,
       rulePath: isSet(object.rulePath) ? globalThis.String(object.rulePath) : undefined,
       filename: isSet(object.filename) ? globalThis.String(object.filename) : undefined,
@@ -314,7 +326,7 @@ export const RuleFileRequest: MessageFns<RuleFileRequest> = {
   toJSON(message: RuleFileRequest): unknown {
     const obj: any = {};
     if (message.metadata !== undefined) {
-      obj.metadata = Metadata.toJSON(message.metadata);
+      obj.metadata = Metadata1.toJSON(message.metadata);
     }
     if (message.isGlobal !== false) {
       obj.isGlobal = message.isGlobal;
@@ -334,7 +346,7 @@ export const RuleFileRequest: MessageFns<RuleFileRequest> = {
   fromPartial<I extends Exact<DeepPartial<RuleFileRequest>, I>>(object: I): RuleFileRequest {
     const message = createBaseRuleFileRequest();
     message.metadata = (object.metadata !== undefined && object.metadata !== null)
-      ? Metadata.fromPartial(object.metadata)
+      ? Metadata1.fromPartial(object.metadata)
       : undefined;
     message.isGlobal = object.isGlobal ?? false;
     message.rulePath = object.rulePath ?? undefined;
@@ -436,58 +448,155 @@ export const RuleFile: MessageFns<RuleFile> = {
 };
 
 /** Service for file-related operations */
-export type FileServiceDefinition = typeof FileServiceDefinition;
-export const FileServiceDefinition = {
-  name: "FileService",
-  fullName: "cline.FileService",
-  methods: {
-    /** Opens a file in the editor */
-    openFile: {
-      name: "openFile",
-      requestType: StringRequest,
-      requestStream: false,
-      responseType: Empty,
-      responseStream: false,
-      options: {},
-    },
-    /** Opens an image in the system viewer */
-    openImage: {
-      name: "openImage",
-      requestType: StringRequest,
-      requestStream: false,
-      responseType: Empty,
-      responseStream: false,
-      options: {},
-    },
-    /** Deletes a rule file from either global or workspace rules directory */
-    deleteRuleFile: {
-      name: "deleteRuleFile",
-      requestType: RuleFileRequest,
-      requestStream: false,
-      responseType: RuleFile,
-      responseStream: false,
-      options: {},
-    },
-    /** Creates a rule file from either global or workspace rules directory */
-    createRuleFile: {
-      name: "createRuleFile",
-      requestType: RuleFileRequest,
-      requestStream: false,
-      responseType: RuleFile,
-      responseStream: false,
-      options: {},
-    },
-    /** Search git commits in the workspace */
-    searchCommits: {
-      name: "searchCommits",
-      requestType: StringRequest,
-      requestStream: false,
-      responseType: GitCommits,
-      responseStream: false,
-      options: {},
-    },
+export type FileServiceService = typeof FileServiceService;
+export const FileServiceService = {
+  /** Opens a file in the editor */
+  openFile: {
+    path: "/cline.FileService/openFile",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: StringRequest) => Buffer.from(StringRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => StringRequest.decode(value),
+    responseSerialize: (value: Empty) => Buffer.from(Empty.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => Empty.decode(value),
+  },
+  /** Opens an image in the system viewer */
+  openImage: {
+    path: "/cline.FileService/openImage",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: StringRequest) => Buffer.from(StringRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => StringRequest.decode(value),
+    responseSerialize: (value: Empty) => Buffer.from(Empty.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => Empty.decode(value),
+  },
+  /** Deletes a rule file from either global or workspace rules directory */
+  deleteRuleFile: {
+    path: "/cline.FileService/deleteRuleFile",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: RuleFileRequest) => Buffer.from(RuleFileRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => RuleFileRequest.decode(value),
+    responseSerialize: (value: RuleFile) => Buffer.from(RuleFile.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => RuleFile.decode(value),
+  },
+  /** Creates a rule file from either global or workspace rules directory */
+  createRuleFile: {
+    path: "/cline.FileService/createRuleFile",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: RuleFileRequest) => Buffer.from(RuleFileRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => RuleFileRequest.decode(value),
+    responseSerialize: (value: RuleFile) => Buffer.from(RuleFile.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => RuleFile.decode(value),
+  },
+  /** Search git commits in the workspace */
+  searchCommits: {
+    path: "/cline.FileService/searchCommits",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: StringRequest) => Buffer.from(StringRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => StringRequest.decode(value),
+    responseSerialize: (value: GitCommits) => Buffer.from(GitCommits.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => GitCommits.decode(value),
   },
 } as const;
+
+export interface FileServiceServer extends UntypedServiceImplementation {
+  /** Opens a file in the editor */
+  openFile: handleUnaryCall<StringRequest, Empty>;
+  /** Opens an image in the system viewer */
+  openImage: handleUnaryCall<StringRequest, Empty>;
+  /** Deletes a rule file from either global or workspace rules directory */
+  deleteRuleFile: handleUnaryCall<RuleFileRequest, RuleFile>;
+  /** Creates a rule file from either global or workspace rules directory */
+  createRuleFile: handleUnaryCall<RuleFileRequest, RuleFile>;
+  /** Search git commits in the workspace */
+  searchCommits: handleUnaryCall<StringRequest, GitCommits>;
+}
+
+export interface FileServiceClient extends Client {
+  /** Opens a file in the editor */
+  openFile(request: StringRequest, callback: (error: ServiceError | null, response: Empty) => void): ClientUnaryCall;
+  openFile(
+    request: StringRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  openFile(
+    request: StringRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  /** Opens an image in the system viewer */
+  openImage(request: StringRequest, callback: (error: ServiceError | null, response: Empty) => void): ClientUnaryCall;
+  openImage(
+    request: StringRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  openImage(
+    request: StringRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: Empty) => void,
+  ): ClientUnaryCall;
+  /** Deletes a rule file from either global or workspace rules directory */
+  deleteRuleFile(
+    request: RuleFileRequest,
+    callback: (error: ServiceError | null, response: RuleFile) => void,
+  ): ClientUnaryCall;
+  deleteRuleFile(
+    request: RuleFileRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: RuleFile) => void,
+  ): ClientUnaryCall;
+  deleteRuleFile(
+    request: RuleFileRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: RuleFile) => void,
+  ): ClientUnaryCall;
+  /** Creates a rule file from either global or workspace rules directory */
+  createRuleFile(
+    request: RuleFileRequest,
+    callback: (error: ServiceError | null, response: RuleFile) => void,
+  ): ClientUnaryCall;
+  createRuleFile(
+    request: RuleFileRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: RuleFile) => void,
+  ): ClientUnaryCall;
+  createRuleFile(
+    request: RuleFileRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: RuleFile) => void,
+  ): ClientUnaryCall;
+  /** Search git commits in the workspace */
+  searchCommits(
+    request: StringRequest,
+    callback: (error: ServiceError | null, response: GitCommits) => void,
+  ): ClientUnaryCall;
+  searchCommits(
+    request: StringRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: GitCommits) => void,
+  ): ClientUnaryCall;
+  searchCommits(
+    request: StringRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: GitCommits) => void,
+  ): ClientUnaryCall;
+}
+
+export const FileServiceClient = makeGenericClientConstructor(FileServiceService, "cline.FileService") as unknown as {
+  new (address: string, credentials: ChannelCredentials, options?: Partial<ClientOptions>): FileServiceClient;
+  service: typeof FileServiceService;
+  serviceName: string;
+};
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 

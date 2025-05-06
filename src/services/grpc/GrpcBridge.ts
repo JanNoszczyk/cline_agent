@@ -137,7 +137,8 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	private createTaskControlImplementation(): grpc.UntypedServiceImplementation {
 		// Map TaskControlService methods to GrpcBridge callbacks
 		return {
-			StartTask: (call: grpc.ServerWritableStream<taskControlPb.NewTaskRequest, taskControlPb.ExtensionMessage>) => {
+			startTask: (call: grpc.ServerWritableStream<taskControlPb.NewTaskRequest, taskControlPb.ExtensionMessage>) => {
+				// Changed from StartTask to startTask
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
 				if (!clientId) {
 					Logger.error("[GrpcBridge:StartTask] Client ID missing in metadata")
@@ -182,7 +183,11 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 						const taskStartedMessage: taskControlPb.ExtensionMessage = {
 							type: taskControlPb.ExtensionMessageType.TASK_STARTED,
 							taskStarted: { taskId: currentTaskId, version: extensionVersion },
+							// errorMessage is not part of the 'payload' oneof and should not be set here unless it's an error message
 						}
+						Logger.info(
+							`[GrpcBridge:StartTask] Constructed TASK_STARTED message for client ${clientId}: ${JSON.stringify(taskStartedMessage)}`,
+						)
 						if (!call.writableEnded) {
 							call.write(taskStartedMessage)
 						}
@@ -421,30 +426,41 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 					callback({ code: grpc.status.INTERNAL, details: `Error getting state: ${error.message}` })
 				}
 			},
-			UpdateSettings: async (
+			updateSettings: async (
+				// Changed from UpdateSettings to updateSettings
 				call: grpc.ServerWritableStream<taskControlPb.UpdateSettingsRequest, taskControlPb.ExtensionMessage>,
 			) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
 				Logger.info(
-					`[GrpcBridge:UpdateSettings] Handler entered. Client ID: ${clientId}, Request: ${JSON.stringify(call.request)}`,
+					`[GrpcBridge:updateSettings] Handler entered. Client ID: ${clientId}, Request: ${JSON.stringify(call.request)}`,
 				)
+				// Call the existing handleUpdateSettings method
+				// Note: The original proto defines UpdateSettings as streaming, but the Go client calls it as unary.
+				// The current GrpcBridge.handleUpdateSettings is async void.
+				// For now, we'll adapt to send a single confirmation and end, assuming the client expects this.
+				// If the client truly expects a stream, this handler and the GrpcBridge.handleUpdateSettings need adjustment.
 				try {
+					// Assuming the actual logic for updating settings is in this.handleUpdateSettings
+					// However, the gRPC method in proto is `stream ExtensionMessage`, so we must stream.
+					// The Go client seems to treat it as unary and then tries to Recv.
+					// Let's call the internal handler first, then send confirmation.
+					await this.handleUpdateSettings(clientId!, call.request) // Pass the request object
+
 					const confirmationMessage: taskControlPb.ExtensionMessage = {
 						type: taskControlPb.ExtensionMessageType.DID_UPDATE_SETTINGS,
-						// No payload needed for DID_UPDATE_SETTINGS as per proto
 					}
-					Logger.info("[GrpcBridge:UpdateSettings] Writing DID_UPDATE_SETTINGS confirmation...")
+					Logger.info("[GrpcBridge:updateSettings] Writing DID_UPDATE_SETTINGS confirmation...")
 					if (!call.writableEnded) {
 						call.write(confirmationMessage)
 					}
-					Logger.info("[GrpcBridge:UpdateSettings] DID_UPDATE_SETTINGS confirmation written. Ending stream.")
+					Logger.info("[GrpcBridge:updateSettings] DID_UPDATE_SETTINGS confirmation written. Ending stream.")
 					if (!call.writableEnded) {
 						call.end()
 					}
 				} catch (e: any) {
-					Logger.error(`[GrpcBridge:UpdateSettings] Error in UpdateSettings handler: ${e.message} ${e.stack}`)
+					Logger.error(`[GrpcBridge:updateSettings] Error in updateSettings handler: ${e.message} ${e.stack}`)
 					if (!call.writableEnded) {
-						call.emit("error", { code: grpc.status.INTERNAL, details: `UpdateSettings handler error: ${e.message}` })
+						call.emit("error", { code: grpc.status.INTERNAL, details: `updateSettings handler error: ${e.message}` })
 					}
 					if (!call.writableEnded) {
 						call.end()

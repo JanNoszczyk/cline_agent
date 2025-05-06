@@ -6,7 +6,19 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { Boolean, EmptyRequest, Metadata, StringRequest } from "./common";
+import {
+  type CallOptions,
+  ChannelCredentials,
+  Client,
+  type ClientOptions,
+  type ClientUnaryCall,
+  type handleUnaryCall,
+  makeGenericClientConstructor,
+  Metadata,
+  type ServiceError,
+  type UntypedServiceImplementation,
+} from "@grpc/grpc-js";
+import { Boolean, EmptyRequest, Metadata as Metadata1, StringRequest } from "./common";
 
 export const protobufPackage = "cline";
 
@@ -39,7 +51,7 @@ export interface BrowserSettings {
 }
 
 export interface UpdateBrowserSettingsRequest {
-  metadata?: Metadata | undefined;
+  metadata?: Metadata1 | undefined;
   viewport?: Viewport | undefined;
   remoteBrowserHost?: string | undefined;
   remoteBrowserEnabled?: boolean | undefined;
@@ -484,7 +496,7 @@ function createBaseUpdateBrowserSettingsRequest(): UpdateBrowserSettingsRequest 
 export const UpdateBrowserSettingsRequest: MessageFns<UpdateBrowserSettingsRequest> = {
   encode(message: UpdateBrowserSettingsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.metadata !== undefined) {
-      Metadata.encode(message.metadata, writer.uint32(10).fork()).join();
+      Metadata1.encode(message.metadata, writer.uint32(10).fork()).join();
     }
     if (message.viewport !== undefined) {
       Viewport.encode(message.viewport, writer.uint32(18).fork()).join();
@@ -510,7 +522,7 @@ export const UpdateBrowserSettingsRequest: MessageFns<UpdateBrowserSettingsReque
             break;
           }
 
-          message.metadata = Metadata.decode(reader, reader.uint32());
+          message.metadata = Metadata1.decode(reader, reader.uint32());
           continue;
         }
         case 2: {
@@ -548,7 +560,7 @@ export const UpdateBrowserSettingsRequest: MessageFns<UpdateBrowserSettingsReque
 
   fromJSON(object: any): UpdateBrowserSettingsRequest {
     return {
-      metadata: isSet(object.metadata) ? Metadata.fromJSON(object.metadata) : undefined,
+      metadata: isSet(object.metadata) ? Metadata1.fromJSON(object.metadata) : undefined,
       viewport: isSet(object.viewport) ? Viewport.fromJSON(object.viewport) : undefined,
       remoteBrowserHost: isSet(object.remoteBrowserHost) ? globalThis.String(object.remoteBrowserHost) : undefined,
       remoteBrowserEnabled: isSet(object.remoteBrowserEnabled)
@@ -560,7 +572,7 @@ export const UpdateBrowserSettingsRequest: MessageFns<UpdateBrowserSettingsReque
   toJSON(message: UpdateBrowserSettingsRequest): unknown {
     const obj: any = {};
     if (message.metadata !== undefined) {
-      obj.metadata = Metadata.toJSON(message.metadata);
+      obj.metadata = Metadata1.toJSON(message.metadata);
     }
     if (message.viewport !== undefined) {
       obj.viewport = Viewport.toJSON(message.viewport);
@@ -580,7 +592,7 @@ export const UpdateBrowserSettingsRequest: MessageFns<UpdateBrowserSettingsReque
   fromPartial<I extends Exact<DeepPartial<UpdateBrowserSettingsRequest>, I>>(object: I): UpdateBrowserSettingsRequest {
     const message = createBaseUpdateBrowserSettingsRequest();
     message.metadata = (object.metadata !== undefined && object.metadata !== null)
-      ? Metadata.fromPartial(object.metadata)
+      ? Metadata1.fromPartial(object.metadata)
       : undefined;
     message.viewport = (object.viewport !== undefined && object.viewport !== null)
       ? Viewport.fromPartial(object.viewport)
@@ -591,53 +603,150 @@ export const UpdateBrowserSettingsRequest: MessageFns<UpdateBrowserSettingsReque
   },
 };
 
-export type BrowserServiceDefinition = typeof BrowserServiceDefinition;
-export const BrowserServiceDefinition = {
-  name: "BrowserService",
-  fullName: "cline.BrowserService",
-  methods: {
-    getBrowserConnectionInfo: {
-      name: "getBrowserConnectionInfo",
-      requestType: EmptyRequest,
-      requestStream: false,
-      responseType: BrowserConnectionInfo,
-      responseStream: false,
-      options: {},
-    },
-    testBrowserConnection: {
-      name: "testBrowserConnection",
-      requestType: StringRequest,
-      requestStream: false,
-      responseType: BrowserConnection,
-      responseStream: false,
-      options: {},
-    },
-    discoverBrowser: {
-      name: "discoverBrowser",
-      requestType: EmptyRequest,
-      requestStream: false,
-      responseType: BrowserConnection,
-      responseStream: false,
-      options: {},
-    },
-    getDetectedChromePath: {
-      name: "getDetectedChromePath",
-      requestType: EmptyRequest,
-      requestStream: false,
-      responseType: ChromePath,
-      responseStream: false,
-      options: {},
-    },
-    updateBrowserSettings: {
-      name: "updateBrowserSettings",
-      requestType: UpdateBrowserSettingsRequest,
-      requestStream: false,
-      responseType: Boolean,
-      responseStream: false,
-      options: {},
-    },
+export type BrowserServiceService = typeof BrowserServiceService;
+export const BrowserServiceService = {
+  getBrowserConnectionInfo: {
+    path: "/cline.BrowserService/getBrowserConnectionInfo",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: EmptyRequest) => Buffer.from(EmptyRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => EmptyRequest.decode(value),
+    responseSerialize: (value: BrowserConnectionInfo) => Buffer.from(BrowserConnectionInfo.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => BrowserConnectionInfo.decode(value),
+  },
+  testBrowserConnection: {
+    path: "/cline.BrowserService/testBrowserConnection",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: StringRequest) => Buffer.from(StringRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => StringRequest.decode(value),
+    responseSerialize: (value: BrowserConnection) => Buffer.from(BrowserConnection.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => BrowserConnection.decode(value),
+  },
+  discoverBrowser: {
+    path: "/cline.BrowserService/discoverBrowser",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: EmptyRequest) => Buffer.from(EmptyRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => EmptyRequest.decode(value),
+    responseSerialize: (value: BrowserConnection) => Buffer.from(BrowserConnection.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => BrowserConnection.decode(value),
+  },
+  getDetectedChromePath: {
+    path: "/cline.BrowserService/getDetectedChromePath",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: EmptyRequest) => Buffer.from(EmptyRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => EmptyRequest.decode(value),
+    responseSerialize: (value: ChromePath) => Buffer.from(ChromePath.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => ChromePath.decode(value),
+  },
+  updateBrowserSettings: {
+    path: "/cline.BrowserService/updateBrowserSettings",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: UpdateBrowserSettingsRequest) =>
+      Buffer.from(UpdateBrowserSettingsRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => UpdateBrowserSettingsRequest.decode(value),
+    responseSerialize: (value: Boolean) => Buffer.from(Boolean.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => Boolean.decode(value),
   },
 } as const;
+
+export interface BrowserServiceServer extends UntypedServiceImplementation {
+  getBrowserConnectionInfo: handleUnaryCall<EmptyRequest, BrowserConnectionInfo>;
+  testBrowserConnection: handleUnaryCall<StringRequest, BrowserConnection>;
+  discoverBrowser: handleUnaryCall<EmptyRequest, BrowserConnection>;
+  getDetectedChromePath: handleUnaryCall<EmptyRequest, ChromePath>;
+  updateBrowserSettings: handleUnaryCall<UpdateBrowserSettingsRequest, Boolean>;
+}
+
+export interface BrowserServiceClient extends Client {
+  getBrowserConnectionInfo(
+    request: EmptyRequest,
+    callback: (error: ServiceError | null, response: BrowserConnectionInfo) => void,
+  ): ClientUnaryCall;
+  getBrowserConnectionInfo(
+    request: EmptyRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: BrowserConnectionInfo) => void,
+  ): ClientUnaryCall;
+  getBrowserConnectionInfo(
+    request: EmptyRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: BrowserConnectionInfo) => void,
+  ): ClientUnaryCall;
+  testBrowserConnection(
+    request: StringRequest,
+    callback: (error: ServiceError | null, response: BrowserConnection) => void,
+  ): ClientUnaryCall;
+  testBrowserConnection(
+    request: StringRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: BrowserConnection) => void,
+  ): ClientUnaryCall;
+  testBrowserConnection(
+    request: StringRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: BrowserConnection) => void,
+  ): ClientUnaryCall;
+  discoverBrowser(
+    request: EmptyRequest,
+    callback: (error: ServiceError | null, response: BrowserConnection) => void,
+  ): ClientUnaryCall;
+  discoverBrowser(
+    request: EmptyRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: BrowserConnection) => void,
+  ): ClientUnaryCall;
+  discoverBrowser(
+    request: EmptyRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: BrowserConnection) => void,
+  ): ClientUnaryCall;
+  getDetectedChromePath(
+    request: EmptyRequest,
+    callback: (error: ServiceError | null, response: ChromePath) => void,
+  ): ClientUnaryCall;
+  getDetectedChromePath(
+    request: EmptyRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ChromePath) => void,
+  ): ClientUnaryCall;
+  getDetectedChromePath(
+    request: EmptyRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ChromePath) => void,
+  ): ClientUnaryCall;
+  updateBrowserSettings(
+    request: UpdateBrowserSettingsRequest,
+    callback: (error: ServiceError | null, response: Boolean) => void,
+  ): ClientUnaryCall;
+  updateBrowserSettings(
+    request: UpdateBrowserSettingsRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: Boolean) => void,
+  ): ClientUnaryCall;
+  updateBrowserSettings(
+    request: UpdateBrowserSettingsRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: Boolean) => void,
+  ): ClientUnaryCall;
+}
+
+export const BrowserServiceClient = makeGenericClientConstructor(
+  BrowserServiceService,
+  "cline.BrowserService",
+) as unknown as {
+  new (address: string, credentials: ChannelCredentials, options?: Partial<ClientOptions>): BrowserServiceClient;
+  service: typeof BrowserServiceService;
+  serviceName: string;
+};
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 

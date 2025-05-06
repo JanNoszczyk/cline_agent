@@ -71,7 +71,7 @@ echo "OpenVSCode Server is listening on port ${VSCODE_INTERNAL_PORT}."
 # Wait for the CONTAINER's gRPC server port to be available
 GRPC_HOST="localhost" # Target is now localhost within the container
 GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Use port from env var or default
-WAIT_TIMEOUT=60 # Maximum seconds to wait for gRPC port (intra-container)
+WAIT_TIMEOUT=120 # Increased timeout to 120 seconds
 WAIT_INTERVAL=1 # Seconds between checks
 SECONDS_WAITED=0
 
@@ -79,7 +79,7 @@ echo "Waiting up to ${WAIT_TIMEOUT}s for Cline gRPC server at ${GRPC_HOST}:${GRP
 while ! nc -z ${GRPC_HOST} ${GRPC_PORT} 2>/dev/null; do
   if [ ${SECONDS_WAITED} -ge ${WAIT_TIMEOUT} ]; then
     echo "Error: Timed out waiting for gRPC server at ${GRPC_HOST}:${GRPC_PORT} (within container) after ${WAIT_TIMEOUT} seconds." >&2
-    exit 1
+    exit 1 # Explicitly exit with error code
   fi
   sleep ${WAIT_INTERVAL}
   SECONDS_WAITED=$((SECONDS_WAITED + WAIT_INTERVAL))
