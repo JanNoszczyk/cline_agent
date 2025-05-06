@@ -68,30 +68,57 @@ while ! nc -z localhost ${VSCODE_INTERNAL_PORT}; do
 done
 echo "OpenVSCode Server is listening on port ${VSCODE_INTERNAL_PORT}."
 
-# Wait for the HOST's gRPC server port to be available
-# Use CLINE_GRPC_HOST env var (set in docker-compose), fallback to host.docker.internal
-GRPC_HOST=${CLINE_GRPC_HOST:-host.docker.internal}
-GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Use default if env var not set
-WAIT_TIMEOUT=300 # Maximum seconds to wait for gRPC port (Increased from 120)
+# Wait for the CONTAINER's gRPC server port to be available
+GRPC_HOST="localhost" # Target is now localhost within the container
+GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Use port from env var or default
+WAIT_TIMEOUT=60 # Maximum seconds to wait for gRPC port (intra-container)
 WAIT_INTERVAL=1 # Seconds between checks
 SECONDS_WAITED=0
 
-echo "Waiting up to ${WAIT_TIMEOUT}s for Cline gRPC server at ${GRPC_HOST}:${GRPC_PORT}..."
+echo "Waiting up to ${WAIT_TIMEOUT}s for Cline gRPC server at ${GRPC_HOST}:${GRPC_PORT} (within container)..."
 while ! nc -z ${GRPC_HOST} ${GRPC_PORT} 2>/dev/null; do
   if [ ${SECONDS_WAITED} -ge ${WAIT_TIMEOUT} ]; then
-    echo "Error: Timed out waiting for gRPC server at ${GRPC_HOST}:${GRPC_PORT} after ${WAIT_TIMEOUT} seconds." >&2
-    # Exit if the gRPC server doesn't become available
+    echo "Error: Timed out waiting for gRPC server at ${GRPC_HOST}:${GRPC_PORT} (within container) after ${WAIT_TIMEOUT} seconds." >&2
     exit 1
   fi
   sleep ${WAIT_INTERVAL}
   SECONDS_WAITED=$((SECONDS_WAITED + WAIT_INTERVAL))
-  echo "Waited ${SECONDS_WAITED}s..."
+  echo "Waited ${SECONDS_WAITED}s for intra-container gRPC server..."
 done
-echo "Cline gRPC server detected at ${GRPC_HOST}:${GRPC_PORT}."
+echo "Cline gRPC server detected at ${GRPC_HOST}:${GRPC_PORT} (within container)."
 
-# Add a longer delay to allow the gRPC server within the extension to fully initialize
-echo "Waiting 60 seconds for gRPC server internal initialization..."
-sleep 60
+# Add a short delay to allow the gRPC server within the extension to fully initialize
+echo "Waiting 3 seconds for gRPC server internal initialization..."
+sleep 3
+
+echo "Attempting to display gRPC server debug log..."
+PRIMARY_GRPC_DEBUG_LOG_PATH="/home/openvscode-server/.openvscode-server/data/User/globalStorage/saoudrizwan.claude-dev/grpc_server_debug.log"
+FALLBACK_GRPC_DEBUG_LOG_PATH="/tmp/grpc_server_debug.log"
+
+GRPC_DEBUG_LOG_PATH_TO_CAT=""
+
+if [ -f "${PRIMARY_GRPC_DEBUG_LOG_PATH}" ]; then
+    echo "Primary gRPC debug log file found at ${PRIMARY_GRPC_DEBUG_LOG_PATH}."
+    GRPC_DEBUG_LOG_PATH_TO_CAT="${PRIMARY_GRPC_DEBUG_LOG_PATH}"
+elif [ -f "${FALLBACK_GRPC_DEBUG_LOG_PATH}" ]; then
+    echo "Fallback gRPC debug log file found at ${FALLBACK_GRPC_DEBUG_LOG_PATH}."
+    GRPC_DEBUG_LOG_PATH_TO_CAT="${FALLBACK_GRPC_DEBUG_LOG_PATH}"
+else
+    echo "Neither primary nor fallback gRPC debug log file found."
+    echo "Primary path checked: ${PRIMARY_GRPC_DEBUG_LOG_PATH}"
+    echo "Fallback path checked: ${FALLBACK_GRPC_DEBUG_LOG_PATH}"
+    # Attempt to list globalStorage to help debug path issues
+    echo "Listing contents of /home/openvscode-server/.openvscode-server/data/User/globalStorage/ (if it exists):"
+    ls -la /home/openvscode-server/.openvscode-server/data/User/globalStorage/ || echo "Could not list globalStorage or it does not exist."
+    echo "Listing contents of /tmp/:"
+    ls -la /tmp/ || echo "Could not list /tmp."
+fi
+
+if [ -n "${GRPC_DEBUG_LOG_PATH_TO_CAT}" ]; then
+    echo "--- Contents of ${GRPC_DEBUG_LOG_PATH_TO_CAT} ---"
+    cat "${GRPC_DEBUG_LOG_PATH_TO_CAT}"
+    echo "--- End of ${GRPC_DEBUG_LOG_PATH_TO_CAT} ---"
+fi
 
 # --- TEMPORARY sleep removed, nc check restored ---
 
@@ -105,26 +132,39 @@ echo "Setting PLAYWRIGHT_BROWSERS_PATH to ${PLAYWRIGHT_BROWSERS_PATH}"
 # It reads CLINE_GRPC_PORT from the environment (set by Docker/runtime)
 # Force TEST mode execution based on user feedback
 if true; then # <<< Force this condition to always be true
-  echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in TEST mode (foreground for debugging)..."
-  # Run in foreground to see immediate errors/output
-  /final-app/sandbox-binary -test
+  echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in TEST mode (background for debugging)..."
+  # Run in background to allow script to continue to 'wait $VSCODE_SERVER_PID'
+  /final-app/sandbox-binary -test &
 else
   # This block will now never be reached
   echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in default mode..."
   /final-app/sandbox-binary &
 fi
-GO_CLIENT_PID=$!
-echo "Go client started with PID ${GO_CLIENT_PID}"
+GO_CLIENT_PID=$! # This will be the PID of the backgrounded Go client
+echo "Go client started in background with PID ${GO_CLIENT_PID}"
 
 # Keep the container running by waiting for the primary VS Code server process
 echo "Container setup complete. Monitoring background processes (VSCode Server: ${VSCODE_SERVER_PID}, Go Client: ${GO_CLIENT_PID})..."
-# Wait specifically for the VS Code server process to exit. The Go client finishing should not stop the container.
+# Wait specifically for the VS Code server process to exit.
 # This will keep the script running in the foreground until VSCode Server stops.
 wait $VSCODE_SERVER_PID
 EXIT_CODE=$?
 echo "VSCode Server process (PID ${VSCODE_SERVER_PID}) exited with code ${EXIT_CODE}. Initiating shutdown..."
 
 # Call cleanup explicitly when the wait finishes (VS Code server exited)
+# Also attempt to display log file in cleanup
+echo "Attempting to display gRPC server debug log during cleanup..."
+if [ -f "${PRIMARY_GRPC_DEBUG_LOG_PATH}" ]; then
+    echo "--- Contents of ${PRIMARY_GRPC_DEBUG_LOG_PATH} (during cleanup) ---"
+    cat "${PRIMARY_GRPC_DEBUG_LOG_PATH}"
+    echo "--- End of ${PRIMARY_GRPC_DEBUG_LOG_PATH} (during cleanup) ---"
+elif [ -f "${FALLBACK_GRPC_DEBUG_LOG_PATH}" ]; then
+    echo "--- Contents of ${FALLBACK_GRPC_DEBUG_LOG_PATH} (during cleanup) ---"
+    cat "${FALLBACK_GRPC_DEBUG_LOG_PATH}"
+    echo "--- End of ${FALLBACK_GRPC_DEBUG_LOG_PATH} (during cleanup) ---"
+else
+    echo "No gRPC debug log file found at either primary or fallback path during cleanup."
+fi
 cleanup
 
 # Exit the script with the VS Code server's exit code

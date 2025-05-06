@@ -38,11 +38,10 @@ func main() {
 		}
 	}
 
-	grpcHost := os.Getenv("CLINE_GRPC_HOST")
-	if grpcHost == "" {
-		grpcHost = defaultGrpcHost
-		log.Printf("CLINE_GRPC_HOST not set. Using default: %s", defaultGrpcHost)
-	}
+	// For intra-container communication, always use localhost.
+	// The CLINE_GRPC_HOST from docker-compose (host.docker.internal) is for host access, not relevant here.
+	grpcHost := "localhost" // Hardcode to localhost for intra-container
+	log.Printf("Forcing gRPC host to '%s' for intra-container communication.", grpcHost)
 
 	targetAddr := fmt.Sprintf("%s:%d", grpcHost, grpcPort)
 	log.Printf("Attempting to connect to gRPC server at: %s", targetAddr)

@@ -148,6 +148,7 @@ export class Task {
 	isInitialized = false
 	isAwaitingPlanResponse = false
 	didRespondToPlanAskBySwitchingMode = false
+	public isDisposed = false // Added for gRPC bridge
 
 	// Metadata tracking
 	private fileContextTracker: FileContextTracker
@@ -1069,6 +1070,7 @@ export class Task {
 
 	async abortTask() {
 		this.abort = true // will stop any autonomously running promises
+		this.isDisposed = true // Set before emitting dispose
 		this.terminalManager.disposeAll()
 		this.urlContentFetcher.closeBrowser()
 		await this.browserSession.dispose()
