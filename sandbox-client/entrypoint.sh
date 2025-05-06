@@ -89,6 +89,10 @@ while ! nc -z ${GRPC_HOST} ${GRPC_PORT} 2>/dev/null; do
 done
 echo "Cline gRPC server detected at ${GRPC_HOST}:${GRPC_PORT}."
 
+# Add a longer delay to allow the gRPC server within the extension to fully initialize
+echo "Waiting 60 seconds for gRPC server internal initialization..."
+sleep 60
+
 # --- TEMPORARY sleep removed, nc check restored ---
 
 # Define and export the global browser path (needed if Playwright is used by tools)
@@ -97,13 +101,15 @@ echo "Setting PLAYWRIGHT_BROWSERS_PATH to ${PLAYWRIGHT_BROWSERS_PATH}"
 
 # Activation keeper script remains disabled/commented out
 
-# Now start the Go sandbox client binary (gRPC version) in the background
+# Now start the Go sandbox client binary (gRPC version)
 # It reads CLINE_GRPC_PORT from the environment (set by Docker/runtime)
-# Check RUN_TEST environment variable to decide whether to pass the -test flag
-if [ "$RUN_TEST" = "true" ]; then
-  echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in TEST mode..."
-  /final-app/sandbox-binary -test &
+# Force TEST mode execution based on user feedback
+if true; then # <<< Force this condition to always be true
+  echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in TEST mode (foreground for debugging)..."
+  # Run in foreground to see immediate errors/output
+  /final-app/sandbox-binary -test
 else
+  # This block will now never be reached
   echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in default mode..."
   /final-app/sandbox-binary &
 fi

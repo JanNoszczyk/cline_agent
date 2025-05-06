@@ -17,19 +17,16 @@
 
 ## 3. Current Status
 
-*   **Refactoring Cycle Complete:** Addressed the major issues identified in the initial gRPC review:
-    *   **Interaction Model:** Enforced pull-based interaction via `ask()`.
-    *   **Message Routing:** Fixed `postMessageToWebview` wrapper to use `taskId`.
-    *   **Task Lifecycle:** Implemented `Task.onDispose` listener and client disconnection handling.
-    *   **Task Context:** Corrected `handleClearTask`/`handleCancelTask` to target specific tasks.
-    *   **Timestamp Mapping:** Fixed timestamp conversions.
-    *   **Type Mapping (`oneof`):** Expanded `mapClineMessageToProto` significantly.
-    *   **Callbacks:** Implemented `handleApplyBrowserSettings` and `handleOpenFile`.
-*   **Next:** Begin end-to-end testing with the `sandbox-client`.
+*   **Debugging gRPC:** Currently debugging a persistent `rpc error: code = Unimplemented desc = unknown service cline.task_control.TaskControlService` error occurring when the `sandbox-client` (Go) calls the `UpdateSettings` RPC.
+    *   Connection from client to server is successful.
+    *   Server starts and binds correctly.
+    *   Various attempts to fix service registration/loading in `server.ts` (logging, simplifying proto loading, different lookup methods, delays) have not resolved the issue.
+*   **Build Script Fixed:** Added missing `build` and `dev` scripts to `package.json`.
+*   **Next:** Retry a full clean build and test cycle to rule out caching/build issues.
 
 ## 4. Known Issues / Blockers
 
-*   **Incomplete Type Mapping:** While improved, `mapClineMessageToProto` and `mapExtensionStateToProto` might still have unhandled cases or require further verification/refinement to minimize casts.
-*   **Error Handling:** gRPC error reporting back to the client could be more robust.
-*   **Controller Interaction:** `controller.initTask` might need adjustments for better gRPC integration.
-*   **`submitToolResult` Streaming:** The current unary implementation might be insufficient (though less relevant now as external results aren't expected).
+*   **gRPC Service Registration:** The root cause of the "Unimplemented" error for `TaskControlService` is still unknown. Potential issues might be in `grpc-js` library behavior, proto loading/interpretation, or build inconsistencies.
+*   **Incomplete Type Mapping:** `mapClineMessageToProto` and `mapExtensionStateToProto` need verification.
+*   **Error Handling:** gRPC error reporting needs improvement.
+*   **Controller Interaction:** `controller.initTask` might need adjustments.

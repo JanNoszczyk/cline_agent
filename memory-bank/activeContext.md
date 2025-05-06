@@ -15,33 +15,33 @@ Continue addressing issues identified during the gRPC bridge review. Based on us
 5.  **Timestamp Mapping Errors:** `mapper.ts` sends numbers instead of `Timestamp` objects.
 6.  **Incomplete/Risky Type Mapping:** `ProtoClineMessage` `oneof` mapping incomplete; casting needs validation.
 
-## 3. Recent Changes (gRPC Refactoring Cycle)
+## 3. Recent Changes (gRPC Debugging Cycle)
 
-*   **gRPC Implementation Review:** Completed.
-*   **Refined `GrpcBridge` Interaction:** Updated `GrpcBridge.ts` based on user feedback:
-    *   `handleToolResult` now logs a warning and does nothing, assuming tool execution is internal.
-    *   `handleUserInput` now checks if the `Task` is waiting for an `ask` response. If not, it throws an error; otherwise, it uses the safe `task.handleWebviewAskResponse` method.
-*   **Decision:** Decided *not* to add new injection methods (`injectExternalUserInput`, `injectExternalToolResult`) to `Task.ts`, adhering to the principle of only responding to explicit `ask()` calls.
-*   **Message Routing (`postMessageToWebview`):**
-    *   Modified `Controller.postMessageToWebview` signature to accept optional `taskId`.
-    *   Updated `GrpcBridge.getWrappedPostMessage` to use the `taskId` for routing decisions between gRPC client and webview.
-    *   Updated all call sites in `Task.ts` to pass `this.taskId`.
-*   **Task Lifecycle Handling:**
-    *   Added `EventEmitter` and `onDispose` method to `Task` class (`src/core/task/index.ts`).
-    *   Updated `GrpcBridge.initTask` to register an `onDispose` listener that removes the task from `clientTaskMap`.
-    *   Added `handleClientDisconnect` callback to `GrpcBridge` and `GrpcServerCallbacks`.
-    *   Updated `server.ts` (`registerClientStream`) to call `handleClientDisconnect` on stream `end`/`error`/`cancelled`.
-*   **Task Context Usage:** Refactored `handleClearTask` and `handleCancelTask` in `GrpcBridge.ts` to call `task.abortTask()` directly on the specific task instance retrieved via `clientTaskMap`.
-*   **Timestamp Mapping:** Corrected timestamp handling in `GrpcBridge.ts` (for `notifyAsk`) and simplified `int64` mapping in `mapper.ts` (`mapClineMessageToProto`).
-*   **Type Mapping (`oneof`):** Expanded `mapClineMessageToProto` in `mapper.ts` to handle most `ask`/`say` types and their payloads using `$case`. Corrected related TS errors (camelCase, enum values, missing constant).
-*   **Remaining Callbacks:** Implemented `handleApplyBrowserSettings` and `handleOpenFile` in `GrpcBridge.ts`.
+*   **Persistent Error:** Encountered persistent `rpc error: code = Unimplemented desc = unknown service cline.task_control.TaskControlService` from the Go client (`sandbox-client`) when calling `UpdateSettings`.
+*   **Debugging Steps:**
+    *   Verified gRPC server starts and binds to `0.0.0.0:50051`.
+    *   Checked Go client connection logic (uses 30s timeout).
+    *   Ruled out host firewall as the primary issue (connection succeeds, but RPC fails).
+    *   Attempted various fixes in `src/services/grpc/server.ts`:
+        *   Implemented `UpdateSettings` handler in `GrpcBridge.ts`.
+        *   Added detailed logging around service registration.
+        *   Simplified proto loading (only `task_control.proto`).
+        *   Tried FQN lookup (`protoDescriptor["..."]`) vs. nested property access (`clineProto.task_control...`) for service definition.
+        *   Added a small delay after `server.start()`.
+    *   None of the above resolved the "Unimplemented" error.
+*   **Build Script Fix:** Identified and fixed a missing `build` script in `package.json` required for compiling TypeScript changes. Added `build` and `dev` scripts using `esbuild.js`.
 
 ## 4. Next Steps (Prioritized)
 
-1.  **(Testing) End-to-End:** Thoroughly test the refactored gRPC communication flow using the `sandbox-client`.
-2.  **(Verification) Type Mapping:** Rigorously verify that all required proto fields are handled correctly in `mapper.ts`, minimizing risky casts, especially within `mapExtensionStateToProto` and the remaining unmapped `ClineMessage` payloads.
-3.  **(Refinement) Error Handling:** Improve error reporting back to the gRPC client in `GrpcBridge` and `server.ts`.
-4.  **(Refinement) Controller Interaction:** Review if `controller.initTask` needs modification to better support `GrpcBridge` (e.g., accepting `clientId`).
+1.  **(Retry Clean Build):** Execute the full clean build command again, now that the `build` script exists: `rm -rf node_modules dist && npm install && node proto/build-proto.js && npm run build && docker compose up --build -d sandbox-client`.
+2.  **(Testing) End-to-End:** If the clean build resolves the "Unimplemented" error, proceed with testing the gRPC flow using the `sandbox-client`.
+3.  **(Further Debugging):** If the error persists after a clean build, investigate potential issues with:
+    *   The `grpc-js` library's handling of dynamically loaded protos.
+    *   The generated Go code's expectation vs. the server's registration.
+    *   Build caching or environment inconsistencies.
+4.  **(Verification) Type Mapping:** Rigorously verify `mapper.ts`.
+5.  **(Refinement) Error Handling:** Improve gRPC error reporting.
+6.  **(Refinement) Controller Interaction:** Review `controller.initTask`.
 
 ## 5. Active Decisions & Considerations
 

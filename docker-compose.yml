@@ -16,7 +16,7 @@ services:
             - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} # Passed to the environment for Cline extension (NEEDS TO BE SET in host or .env)
             - PASSWORD=password # OpenVSCode Server authentication
             - CLINE_GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Port Go client uses to connect to Cline (must match Cline setting)
-            - CLINE_GRPC_HOST=host.docker.internal # Reverted back from localhost
+            - CLINE_GRPC_HOST=host.docker.internal # Reverted back to Docker default
             - NODE_OPTIONS=--max-old-space-size=4096 # For VSCode server / Node processes
             - RUN_TEST=true # Set this to true to run the test client
             # Ensure workspace is mounted and cached for persistence and performance

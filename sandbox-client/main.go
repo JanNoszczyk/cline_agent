@@ -17,7 +17,7 @@ import (
 
 const (
 	defaultGrpcPort = 50051
-	defaultGrpcHost = "host.docker.internal" // Default host for Docker Desktop
+	defaultGrpcHost = "localhost" // Changed from host.docker.internal as requested
 )
 
 func main() {

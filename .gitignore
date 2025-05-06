@@ -32,3 +32,6 @@ src/shared/proto/google/
 
 
 workspace/
+
+.env
+*.env

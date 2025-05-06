@@ -61,6 +61,7 @@ interface GrpcServerCallbacks {
 	handleDeleteTaskWithId(clientId: string, taskId: string): Promise<void>
 	handleApplyBrowserSettings(clientId: string, settings: any): Promise<void>
 	handleOpenFile(clientId: string, filePath: string): Promise<void>
+	handleUpdateSettings(clientId: string, settings: any): Promise<void> // Added for UpdateSettings RPC
 	handleClientDisconnect(clientId: string): Promise<void>
 	// Add other methods implemented by GrpcBridge if needed by the server logic
 }
@@ -419,8 +420,20 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 					callback({ code: grpc.status.INTERNAL, details: `Error getting state: ${error.message}` })
 				}
 			},
+			UpdateSettings: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+				const clientId = call.metadata.get("client-id")?.[0]?.toString()
+				// Updating settings might not require a specific client mapping, but check for safety/auth if needed
+				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				try {
+					// Assuming call.request is the ProtoSettings object
+					await this.handleUpdateSettings(clientId, call.request)
+					callback(null, {}) // Indicate success
+				} catch (error: any) {
+					callback({ code: grpc.status.INTERNAL, details: error.message })
+				}
+			},
 			// TODO: Add mappings for other TaskControlService methods...
-			// ApplyApiConfiguration, ApplyAutoApprovalSettings, ApplyChatSettings, ApplyTelemetrySetting, UpdateSettings, etc.
+			// ApplyApiConfiguration, ApplyAutoApprovalSettings, ApplyChatSettings, ApplyTelemetrySetting, etc.
 			// ... other methods
 		}
 	}
@@ -522,6 +535,43 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			console.error(`[GrpcBridge] Error during initTask execution for client ${clientId}:`, error)
 			// TODO: Notify client of error via grpcNotifier?
 			throw error // Re-throw to be handled by the server's error handling
+		}
+	}
+
+	async handleUpdateSettings(clientId: string, settings: any): Promise<void> {
+		Logger.info(`[GrpcBridge] handleUpdateSettings received for client ${clientId}`)
+		if (!this.controller) {
+			Logger.error("[GrpcBridge] Controller not available for handleUpdateSettings.")
+			throw new Error("Controller not available")
+		}
+		try {
+			// Assuming 'settings' is the ProtoSettings object.
+			// We need to map this back to the structure expected by controller.updateSettings.
+			// This might involve individual calls to updateGlobalState or a dedicated controller method.
+			// Example (adjust based on actual ProtoSettings structure and controller methods):
+			if (settings.api_config) {
+				// Assuming controller has a method like updateApiConfiguration
+				// await this.controller.updateApiConfiguration(mapProtoApiConfigToInternal(settings.api_config));
+				Logger.warn("[GrpcBridge] API Config update via gRPC UpdateSettings not fully implemented.")
+			}
+			if (settings.chat_settings) {
+				// Assuming controller has a method like updateChatSettings
+				// await this.controller.updateChatSettings(mapProtoChatSettingsToInternal(settings.chat_settings));
+				Logger.warn("[GrpcBridge] Chat Settings update via gRPC UpdateSettings not fully implemented.")
+			}
+			if (settings.auto_approval_settings) {
+				// Assuming controller has a method like updateAutoApprovalSettings
+				// await this.controller.updateAutoApprovalSettings(mapProtoAutoApprovalToInternal(settings.auto_approval_settings));
+				Logger.warn("[GrpcBridge] Auto Approval Settings update via gRPC UpdateSettings not fully implemented.")
+			}
+			// Add mappings for other settings fields...
+
+			// After applying changes, notify webview
+			await this.controller.postStateToWebview()
+			Logger.info(`[GrpcBridge] Applied settings update from client ${clientId}`)
+		} catch (error) {
+			Logger.error(`[GrpcBridge] Error applying settings update for client ${clientId}:`, error)
+			throw new Error(`Failed to apply settings update: ${error instanceof Error ? error.message : String(error)}`)
 		}
 	}
 
