@@ -20,16 +20,16 @@
 
 *   **Protobuf Definitions:** `proto/*.proto` (e.g., `task_control.proto`, `task.proto`)
 *   **Protobuf Build Script:** `proto/build-proto.js`
-*   **Generated Protobuf Code:** (Location depends on `build-proto.js` output, likely within `src/` or a dedicated `generated/` folder - *needs verification*)
-*   **gRPC Server Implementation:** `src/core/controller/externalGrpcServer.ts`
-*   **Type Mapping (Cline <-> Proto):** `src/core/controller/grpc-mapper.ts`
-*   **Protobuf Utilities:** `src/utils/proto-mapper.ts`
+*   **Generated Protobuf Code:** `src/shared/proto/` (output of `proto/build-proto.js`)
+*   **gRPC Server Implementation:** `src/services/grpc/server.ts`
+*   **Type Mapping (Cline <-> Proto):** `src/services/grpc/mapper.ts`
+*   **Protobuf Utilities:** `src/utils/proto-mapper.ts` (Note: This file might be legacy or less used now with `mapper.ts` being central)
 *   **Core Extension Logic:**
     *   `src/extension.ts` (Entry point, initialization)
     *   `src/core/controller/index.ts` (Controller class)
     *   `src/core/task/index.ts` (Task class)
     *   `src/core/webview/index.ts` (WebviewProvider class)
-*   **New Integration Component:** `src/services/grpc/GrpcBridge.ts` (To be created)
+*   **New Integration Component:** `src/services/grpc/GrpcBridge.ts`
 *   **External Test Client:** `sandbox-client/` (Go-based gRPC client)
 
 ## 4. Development Setup & Build Process

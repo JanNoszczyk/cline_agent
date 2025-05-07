@@ -41,7 +41,7 @@ graph LR
     *   Manages a mapping (`clientTaskMap`) between external `clientId`s and internal `Task` instances.
     *   Listens for `Task.onDispose` events to clean up `clientTaskMap`.
     *   Translates incoming gRPC requests into calls on the `Controller` or the specific `Task` instance (retrieved via `clientTaskMap`).
-    *   **Crucially:** Only provides input to a `Task` via `handleWebviewAskResponse` when the task is explicitly waiting (via `ask()`).
+    *   Provides input to a `Task` via `handleWebviewAskResponse` (called by `sendUserInput` and `submitAskResponse` gRPC handlers). The `handleUserInput` method now allows unprompted input to be passed to the task.
     *   Intercepts outgoing messages (via wrapped `postMessageToWebview`) using the `taskId` to route messages to the correct gRPC client or the webview.
 *   **`src/extension.ts`**: Responsible for initializing and disposing of the `GrpcBridge`.
 *   **`src/core/controller/index.ts` (`Controller`)**: The core state manager. `GrpcBridge` interacts with it to initiate tasks. `postMessageToWebview` signature updated to include `taskId`.
@@ -56,7 +56,7 @@ graph LR
 *   **Dependency Injection (Implicit):** `extension.ts` injects dependencies into `GrpcBridge`.
 *   **Message Interception (Wrapper/Decorator):** `GrpcBridge` wraps `Controller.postMessageToWebview`. The wrapper uses the `taskId` provided in the message call to look up the `clientId` in `clientTaskMap` and route accordingly.
 *   **State Management:** `GrpcBridge` maintains the `clientId`-to-`Task` mapping, with cleanup handled via the `onDispose` listener.
-*   **Strictly Passive Interface (Pull-Based Interaction):** The gRPC client interaction model MUST strictly mirror the webview's pull-based model. The `GrpcBridge` acts solely as a passive interface. It MUST NOT initiate actions or modify internal `Task` state directly. It only provides input back to the `Task` (via `handleWebviewAskResponse`) when, and only when, the `Task` is explicitly waiting for input via an `ask()` call. Unsolicited inputs or attempts to trigger internal actions are forbidden.
+*   **Passive Interface (Primarily Pull-Based Interaction):** The gRPC client interaction model largely mirrors the webview's pull-based model. The `GrpcBridge` acts as a passive interface for most operations. It does not initiate actions or modify internal `Task` state directly, except for relaying inputs. User input via `sendUserInput` can now be processed by the `Task` even if it's not in an explicit `ask()` state, by calling `task.handleWebviewAskResponse("messageResponse", ...)`. Other interactions like `submitAskResponse` still align with the task waiting for a specific response.
 *   **Protobuf Structure Mirroring:** The Protobuf message definitions (especially those related to `WebviewMessage` payloads like `AskPayload`, `SayPayload`, etc.) MUST precisely mirror the structure and types defined in `src/shared/WebviewMessage.ts`. This ensures consistency and simplifies the mapping layer (`grpc-mapper.ts`).
 
 ## 4. Data Flow Summary

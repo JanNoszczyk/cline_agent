@@ -313,15 +313,50 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 					}
 				})()
 			},
-			SendUserInput: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+			sendUserInput: (call: grpc.ServerWritableStream<taskControlPb.InvokeRequest, taskControlPb.ExtensionMessage>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
-				try {
-					await this.handleUserInput(clientId, call.request.text, call.request.images)
-					callback(null, {}) // Indicate success (empty response)
-				} catch (error: any) {
-					callback({ code: grpc.status.INTERNAL, details: error.message })
+				if (!clientId) {
+					Logger.error("[GrpcBridge:sendUserInput] Client ID missing in metadata")
+					const errorResponse: taskControlPb.ExtensionMessage = {
+						type: taskControlPb.ExtensionMessageType.ERROR,
+						errorMessage: "Client ID missing in metadata for SendUserInput",
+					}
+					if (!call.writableEnded) {
+						call.write(errorResponse)
+						call.end()
+					}
+					return
 				}
+
+				const request = call.request as taskControlPb.InvokeRequest // Corrected type
+				Logger.info(
+					`[GrpcBridge:sendUserInput] Received for client ${clientId}. Text: ${request.text?.substring(0, 50)}...`,
+				)
+				;(async () => {
+					try {
+						await this.handleUserInput(clientId, request.text, request.images)
+						// If handleUserInput completes without error, the input is accepted.
+						// AI responses will be sent via the StartTask stream.
+						// We can optionally send an ACK here or just end the stream.
+						// For now, just end, as client isn't expecting specific message on *this* stream.
+						Logger.info(`[GrpcBridge:sendUserInput] User input processed for client ${clientId}. Ending stream.`)
+						if (!call.writableEnded) {
+							call.end()
+						}
+					} catch (error: any) {
+						Logger.error(
+							`[GrpcBridge:sendUserInput] Error processing user input for client ${clientId}: ${error.message} ${error.stack}`,
+						)
+						const errorResponse: taskControlPb.ExtensionMessage = {
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `Failed to process user input: ${error.message}`,
+						}
+						if (!call.writableEnded) {
+							call.write(errorResponse)
+							call.end()
+						}
+					}
+				})()
 			},
 			SubmitAskResponse: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
@@ -591,19 +626,13 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	}
 
 	async handleUserInput(clientId: string, text?: string, images?: string[]): Promise<void> {
-		Logger.info(`[GrpcBridge] handleUserInput received for client ${clientId}`)
+		Logger.info(`[GrpcBridge] handleUserInput received for client ${clientId} with text: "${text?.substring(0, 30)}..."`)
 		const task = this.clientTaskMap.get(clientId)
 		if (task) {
-			// @ts-expect-error Accessing private property for state check
-			if (task.askResponse === undefined) {
-				Logger.warn(
-					`[GrpcBridge] Received user input for task ${task.taskId} via handleUserInput, but the task is not currently waiting for an 'ask' response. Input ignored.`,
-				)
-				throw new Error("Task is not currently expecting input.")
-			} else {
-				Logger.info(`[GrpcBridge] Forwarding user input as 'messageResponse' to task ${task.taskId}`)
-				task.handleWebviewAskResponse("messageResponse", text, images)
-			}
+			Logger.info(`[GrpcBridge] Forwarding user input as 'messageResponse' to task ${task.taskId}`)
+			// The Task's main loop should be able to pick up this input when it's ready
+			// by calling handleWebviewAskResponse, which sets the necessary properties for the loop.
+			task.handleWebviewAskResponse("messageResponse", text, images)
 		} else {
 			Logger.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleUserInput`)
 			throw new Error("Task associated with client ID not found.")

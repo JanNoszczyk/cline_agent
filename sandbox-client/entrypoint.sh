@@ -79,6 +79,27 @@ echo "Waiting up to ${WAIT_TIMEOUT}s for Cline gRPC server at ${GRPC_HOST}:${GRP
 while ! nc -z ${GRPC_HOST} ${GRPC_PORT} 2>/dev/null; do
   if [ ${SECONDS_WAITED} -ge ${WAIT_TIMEOUT} ]; then
     echo "Error: Timed out waiting for gRPC server at ${GRPC_HOST}:${GRPC_PORT} (within container) after ${WAIT_TIMEOUT} seconds." >&2
+    # Attempt to print gRPC server logs before exiting due to timeout
+    PRIMARY_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT="/home/openvscode-server/.openvscode-server/data/User/globalStorage/saoudrizwan.claude-dev/grpc_server_debug.log"
+    FALLBACK_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT="/tmp/grpc_server_debug.log"
+    echo "Attempting to display gRPC server debug log on timeout..."
+    if [ -f "${PRIMARY_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT}" ]; then
+        echo "--- Contents of ${PRIMARY_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT} (on timeout) ---"
+        cat "${PRIMARY_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT}"
+        echo "--- End of ${PRIMARY_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT} (on timeout) ---"
+    elif [ -f "${FALLBACK_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT}" ]; then
+        echo "--- Contents of ${FALLBACK_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT} (on timeout) ---"
+        cat "${FALLBACK_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT}"
+        echo "--- End of ${FALLBACK_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT} (on timeout) ---"
+    else
+        echo "No gRPC debug log file found at either primary or fallback path during timeout."
+        echo "Primary path checked: ${PRIMARY_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT}"
+        echo "Fallback path checked: ${FALLBACK_GRPC_DEBUG_LOG_PATH_ON_TIMEOUT}"
+        echo "Listing contents of /home/openvscode-server/.openvscode-server/data/User/globalStorage/ (if it exists):"
+        ls -la /home/openvscode-server/.openvscode-server/data/User/globalStorage/ || echo "Could not list globalStorage or it does not exist."
+        echo "Listing contents of /tmp/:"
+        ls -la /tmp/ || echo "Could not list /tmp."
+    fi
     exit 1 # Explicitly exit with error code
   fi
   sleep ${WAIT_INTERVAL}
