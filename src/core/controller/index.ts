@@ -157,7 +157,7 @@ export class Controller {
 			this.mcpHub,
 			this.workspaceTracker,
 			(historyItem) => this.updateTaskHistory(historyItem),
-			() => this.postStateToWebview(),
+			(taskId?: string) => this.postStateToWebview(taskId),
 			(message) => this.postMessageToWebview(message),
 			(taskId) => this.reinitExistingTaskFromId(taskId),
 			() => this.cancelTask(),
@@ -1745,9 +1745,9 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 		return updatedTaskHistory
 	}
 
-	async postStateToWebview() {
+	async postStateToWebview(taskId?: string) {
 		const state = await this.getStateToPostToWebview()
-		this.postMessageToWebview({ type: "state", state })
+		this.postMessageToWebview({ type: "state", state }, taskId)
 	}
 
 	async getStateToPostToWebview(): Promise<ExtensionState> {

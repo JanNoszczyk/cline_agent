@@ -52,6 +52,11 @@ ENV GOARCH=amd64
 ENV GO111MODULE=on
 # Explicitly unset GOPATH to avoid potential conflicts
 ENV GOPATH=""
+# Explicitly set GOCACHE to a path within the container
+ENV GOCACHE=/tmp/gocache
+
+# Log Go environment for diagnostics
+RUN go env
 
 # Set working directory for the Go module
 WORKDIR /app/sandbox-client
@@ -59,6 +64,8 @@ WORKDIR /app/sandbox-client
 # Copy go.mod and go.sum first
 COPY sandbox-client/go.mod sandbox-client/go.sum ./
 
+# Clean build cache first
+RUN go clean -cache
 # Download dependencies BEFORE copying any source code
 # Needs to run in the directory with go.mod
 RUN go mod download

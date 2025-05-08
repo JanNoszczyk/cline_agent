@@ -36,7 +36,9 @@ import { formatResponse } from "@core/prompts/responses" // Import formatRespons
 import Anthropic from "@anthropic-ai/sdk" // Import Anthropic for ContentBlockParam type
 import { Logger } from "@services/logging/Logger" // Import Logger
 import { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb" // Import Timestamp
-import { updateGlobalState } from "../../core/storage/state" // Import for settings update
+import { updateGlobalState, updateApiConfiguration, getAllExtensionState } from "../../core/storage/state" // Import for settings update & API config
+import { ApiConfiguration, ApiProvider } from "../../shared/api" // Import internal ApiConfiguration type
+import { buildApiHandler } from "@api/index" // Import buildApiHandler
 import { BrowserSettings } from "../../shared/BrowserSettings" // Import settings type
 import * as fs from "fs/promises" // Added for file operations
 import { DEFAULT_MCP_TIMEOUT_SECONDS } from "@shared/mcp" // Added for default timeout
@@ -716,8 +718,11 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 				)
 				return undefined
 			}
-		} catch (error) {
-			Logger.error(`[GrpcBridge:initTask] Error during initTask execution for client ${clientId}:`, error) // Use static Logger
+		} catch (error: any) {
+			Logger.error(
+				`[GrpcBridge:initTask] Error during initTask execution for client ${clientId}: ${error?.message} \nStack: ${error?.stack}`,
+				error,
+			) // Use static Logger
 			return undefined
 		}
 	}
@@ -729,17 +734,159 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			throw new Error("Controller not available")
 		}
 		try {
-			if (settings.apiConfiguration) {
-				Logger.warn("[GrpcBridge] API Config update via gRPC UpdateSettings not fully implemented.") // Use static Logger
+			const updates: Partial<ApiConfiguration> = {}
+			const protoApiConfig = settings.apiConfiguration
+
+			if (protoApiConfig) {
+				// Map ApiProvider enum from proto to internal string type
+				let internalApiProvider: ApiProvider | undefined
+				switch (protoApiConfig.apiProvider) {
+					case taskControlPb.ApiProvider.ANTHROPIC:
+						internalApiProvider = "anthropic"
+						break
+					case taskControlPb.ApiProvider.OPENROUTER:
+						internalApiProvider = "openrouter"
+						break
+					case taskControlPb.ApiProvider.BEDROCK:
+						internalApiProvider = "bedrock"
+						break
+					case taskControlPb.ApiProvider.VERTEX:
+						internalApiProvider = "vertex"
+						break
+					case taskControlPb.ApiProvider.OPENAI:
+						internalApiProvider = "openai"
+						break
+					case taskControlPb.ApiProvider.OLLAMA:
+						internalApiProvider = "ollama"
+						break
+					case taskControlPb.ApiProvider.LMSTUDIO:
+						internalApiProvider = "lmstudio"
+						break
+					case taskControlPb.ApiProvider.GEMINI:
+						internalApiProvider = "gemini"
+						break
+					case taskControlPb.ApiProvider.OPENAI_NATIVE:
+						internalApiProvider = "openai-native"
+						break
+					case taskControlPb.ApiProvider.REQUESTY:
+						internalApiProvider = "requesty"
+						break
+					case taskControlPb.ApiProvider.TOGETHER:
+						internalApiProvider = "together"
+						break
+					case taskControlPb.ApiProvider.DEEPSEEK:
+						internalApiProvider = "deepseek"
+						break
+					case taskControlPb.ApiProvider.QWEN:
+						internalApiProvider = "qwen"
+						break
+					case taskControlPb.ApiProvider.DOUBAO:
+						internalApiProvider = "doubao"
+						break
+					case taskControlPb.ApiProvider.MISTRAL:
+						internalApiProvider = "mistral"
+						break
+					case taskControlPb.ApiProvider.VSCODE_LM:
+						internalApiProvider = "vscode-lm"
+						break
+					case taskControlPb.ApiProvider.CLINE:
+						internalApiProvider = "cline"
+						break
+					case taskControlPb.ApiProvider.LITELLM:
+						internalApiProvider = "litellm"
+						break
+					case taskControlPb.ApiProvider.ASKSAGE:
+						internalApiProvider = "asksage"
+						break
+					case taskControlPb.ApiProvider.XAI:
+						internalApiProvider = "xai"
+						break
+					case taskControlPb.ApiProvider.SAMBANOVA:
+						internalApiProvider = "sambanova"
+						break
+					// Add other mappings as needed
+				}
+
+				if (internalApiProvider) {
+					updates.apiProvider = internalApiProvider
+					Logger.info(`[GrpcBridge:handleUpdateSettings] Mapped provider: ${internalApiProvider}`)
+
+					// Map relevant fields based on the provider
+					switch (internalApiProvider) {
+						case "anthropic":
+							updates.apiKey = protoApiConfig.apiKey // Map from proto's apiKey
+							updates.apiModelId = protoApiConfig.apiModelId
+							break
+						case "openai":
+							updates.openAiApiKey = protoApiConfig.apiKey // Map from proto's apiKey
+							updates.openAiModelId = protoApiConfig.apiModelId
+							updates.openAiBaseUrl = protoApiConfig.openAiBaseUrl
+							break
+						case "openrouter":
+							updates.openRouterApiKey = protoApiConfig.apiKey // Map from proto's apiKey
+							updates.openRouterModelId = protoApiConfig.apiModelId
+							break
+						// Add cases for other providers as needed, mapping proto fields to internal fields
+						default:
+							Logger.warn(
+								`[GrpcBridge:handleUpdateSettings] Provider ${internalApiProvider} specific field mapping not fully implemented.`,
+							)
+							// Generic mapping attempt (might not be correct for all fields)
+							updates.apiModelId = protoApiConfig.apiModelId
+							// Assuming proto's 'apiKey' maps to the primary key for other providers if not handled specifically
+							if (protoApiConfig.apiKey) {
+								// This is a guess, might need refinement per provider
+								updates.apiKey = protoApiConfig.apiKey
+							}
+							break
+					}
+					updates.favoritedModelIds = protoApiConfig.favoritedModelIds || []
+					// Map other common fields if they exist in the proto definition
+					// updates.openAiHeaders = protoApiConfig.openAiHeaders ? JSON.parse(protoApiConfig.openAiHeaders) : undefined; // Example if headers were a JSON string
+				} else {
+					Logger.warn(
+						`[GrpcBridge:handleUpdateSettings] Unknown or unmapped ApiProvider enum value: ${protoApiConfig.apiProvider}`,
+					)
+				}
+
+				// Persist the mapped updates
+				if (Object.keys(updates).length > 0) {
+					Logger.info(
+						`[GrpcBridge:handleUpdateSettings] Persisting API configuration updates: ${JSON.stringify(updates)}`,
+					)
+					await updateApiConfiguration(this.context, updates)
+
+					// Update the current task's API handler if a task exists
+					const task = this.clientTaskMap.get(clientId)
+					if (task) {
+						const fullUpdatedConfig = { ...(await getAllExtensionState(this.context)).apiConfiguration, ...updates }
+						task.api = buildApiHandler(fullUpdatedConfig)
+						Logger.info(`[GrpcBridge:handleUpdateSettings] Updated active task's (${task.taskId}) API handler.`)
+					}
+				} else {
+					Logger.warn("[GrpcBridge:handleUpdateSettings] No API configuration updates to persist.")
+				}
+			} else {
+				Logger.warn("[GrpcBridge:handleUpdateSettings] Received request without apiConfiguration field.")
 			}
+
+			// Handle chat settings update (if needed, currently warns)
 			if (settings.chatSettings) {
-				Logger.warn("[GrpcBridge] Chat Settings update via gRPC UpdateSettings not fully implemented.") // Use static Logger
+				Logger.warn("[GrpcBridge] Chat Settings update via gRPC UpdateSettings not fully implemented.")
+				// TODO: Map chatSettings proto to internal ChatSettings and persist if needed
+				// const internalChatSettings = mapProtoChatSettingsToInternal(settings.chatSettings);
+				// await updateGlobalState(this.context, "chatSettings", internalChatSettings);
 			}
+
+			// Refresh state in webview after updates
 			await this.controller.postStateToWebview()
-			Logger.info(`[GrpcBridge] Applied settings update from client ${clientId}`) // Use static Logger
-		} catch (error) {
-			Logger.error(`[GrpcBridge] Error applying settings update for client ${clientId}:`, error) // Use static Logger
-			throw new Error(`Failed to apply settings update: ${error instanceof Error ? error.message : String(error)}`)
+			Logger.info(`[GrpcBridge] Finished processing settings update from client ${clientId}`)
+		} catch (error: any) {
+			Logger.error(
+				`[GrpcBridge] Error applying settings update for client ${clientId}: ${error.message} ${error.stack}`,
+				error,
+			)
+			throw new Error(`Failed to apply settings update: ${error.message}`)
 		}
 	}
 
@@ -898,74 +1045,141 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 
 	private getWrappedPostMessage(originalPostMessage: PostMessageFunc): PostMessageFunc {
 		return (message: ExtensionMessage, taskId?: string): Promise<void> => {
+			Logger.debug(
+				`[WRAPPER_TRACE] Entry. TaskId: ${taskId}, MessageType: ${message?.type}, ClientTaskMap size: ${this.clientTaskMap.size}`,
+			)
 			const clientId = this.findClientIdByTaskId(taskId)
+			Logger.debug(`[WRAPPER_TRACE] Found clientId: ${clientId} for taskId: ${taskId}`)
+
 			if (clientId && this.grpcNotifier) {
 				Logger.info(
-					// Use static Logger
-					`[GrpcBridge] Intercepted message type ${message?.type || "unknown"} for gRPC client ${clientId}, task ${taskId}`,
+					`[WRAPPER_TRACE] GRPC_ROUTE: Intercepted message type ${message?.type || "unknown"} for gRPC client ${clientId}, task ${taskId}. Notifier exists: ${!!this.grpcNotifier}`,
 				)
 				try {
 					const extMsg = message
-					Logger.info(
-						`[GrpcBridge:getWrappedPostMessage] Intercepted message for client ${clientId}, taskId ${taskId}: type='${extMsg.type}', content='${JSON.stringify(extMsg).substring(0, 200)}...'`,
+					Logger.debug(
+						`[WRAPPER_TRACE] GRPC_ROUTE: Processing message for client ${clientId}, taskId ${taskId}: type='${extMsg.type}', content='${JSON.stringify(extMsg).substring(0, 100)}...'`,
 					)
+
 					if (extMsg.error) {
-						Logger.warn(
-							`[GrpcBridge:getWrappedPostMessage] Intercepted error for client ${clientId}: ${extMsg.error}`,
-						)
+						Logger.warn(`[WRAPPER_TRACE] GRPC_ROUTE: Intercepted ERROR for client ${clientId}: ${extMsg.error}`)
 						this.grpcNotifier.emit("error", clientId, extMsg.error)
+						// Also send as a generic ExtensionMessage of type ERROR if not already handled by specific listeners
+						const errorProtoMsg = mapClineMessageToProto({
+							type: "say",
+							say: "error",
+							text: extMsg.error,
+						} as ClineMessage) // Map to a say message for now
+						if (errorProtoMsg) {
+							// This might be redundant if the 'error' event on notifier handles it,
+							// but ensures an ExtensionMessage is sent.
+							// Consider if a specific ERROR type ExtensionMessage is better.
+							// For now, we assume the 'error' event on notifier is primary.
+						}
 					}
+
+					// Always attempt to map and send, even if it's an error,
+					// as some listeners might expect an ExtensionMessage.
+					// The primary path for AI text responses is through 'partialMessage'.
+					let successfullySentToGrpc = false
 					switch (extMsg.type) {
 						case "state":
 							if (extMsg.state) {
 								const protoState = mapExtensionStateToProto(extMsg.state)
 								if (protoState) {
-									Logger.info(`[GrpcBridge:getWrappedPostMessage] Emitting stateUpdate for client ${clientId}.`)
+									Logger.info(`[WRAPPER_TRACE] GRPC_ROUTE: Emitting stateUpdate for client ${clientId}.`)
 									this.grpcNotifier.emit("stateUpdate", clientId, protoState)
+									successfullySentToGrpc = true // Assuming emit means it's handled by gRPC path
+								} else {
+									Logger.warn(
+										`[WRAPPER_TRACE] GRPC_ROUTE: Failed to map 'state' to proto for client ${clientId}.`,
+									)
 								}
 							}
 							break
-						case "partialMessage":
+						case "partialMessage": // This is the key path for AI text responses
 							if (extMsg.partialMessage) {
 								const protoClineMsg = mapClineMessageToProto(extMsg.partialMessage)
 								if (protoClineMsg) {
+									// Determine if it's an 'ask' or 'say' based on internal ClineMessage structure
 									if (extMsg.partialMessage.type === "say") {
 										Logger.info(
-											`[GrpcBridge:getWrappedPostMessage] Emitting sayUpdate for client ${clientId} (type: ${extMsg.partialMessage.say}, partial: ${extMsg.partialMessage.partial}).`,
+											`[WRAPPER_TRACE] GRPC_ROUTE: Emitting sayUpdate for client ${clientId} (type: ${extMsg.partialMessage.say}, partial: ${extMsg.partialMessage.partial}, text len: ${extMsg.partialMessage.text?.length}).`,
 										)
 										this.grpcNotifier.emit(
-											"sayUpdate",
+											"sayUpdate", // This should trigger call.write in StartTask
 											clientId,
 											protoClineMsg,
 											extMsg.partialMessage.partial ?? false,
 										)
+										successfullySentToGrpc = true
 									} else if (extMsg.partialMessage.type === "ask" && extMsg.partialMessage.ask) {
 										Logger.info(
-											`[GrpcBridge:getWrappedPostMessage] Emitting askRequest for client ${clientId} (type: ${extMsg.partialMessage.ask}).`,
+											`[WRAPPER_TRACE] GRPC_ROUTE: Emitting askRequest for client ${clientId} (type: ${extMsg.partialMessage.ask}).`,
 										)
 										this.grpcNotifier.emit("askRequest", clientId, protoClineMsg)
+										successfullySentToGrpc = true
+									} else {
+										Logger.warn(
+											`[WRAPPER_TRACE] GRPC_ROUTE: 'partialMessage' for client ${clientId} is neither 'say' nor 'ask'. Type: ${extMsg.partialMessage.type}`,
+										)
 									}
+								} else {
+									Logger.warn(
+										`[WRAPPER_TRACE] GRPC_ROUTE: Failed to map 'partialMessage' to proto for client ${clientId}.`,
+									)
 								}
 							}
 							break
+						// Add other cases like tool_use, tool_result if they are expected to be routed
+						// For now, focusing on text (partialMessage) and state.
 						default:
 							if (!extMsg.error) {
-								Logger.info(
-									`[GrpcBridge:getWrappedPostMessage] No specific gRPC mapping for intercepted message type: ${extMsg.type}`,
+								// Avoid double logging if it was an error message already handled
+								Logger.debug(
+									`[WRAPPER_TRACE] GRPC_ROUTE: No specific gRPC mapping for intercepted message type: ${extMsg.type}. Not sending to gRPC client ${clientId} via this path.`,
 								)
 							}
 					}
-					return Promise.resolve()
+
+					// If the message was specifically handled and sent via gRPC notifier, we might not want to send it to webview.
+					// However, the original logic was to return Promise.resolve() which effectively stops it from going to originalPostMessage.
+					// Let's maintain that: if successfullySentToGrpc is true, we assume it's handled.
+					if (successfullySentToGrpc) {
+						Logger.debug(
+							`[WRAPPER_TRACE] GRPC_ROUTE: Message type ${extMsg.type} handled by gRPC path for client ${clientId}. Returning.`,
+						)
+						return Promise.resolve()
+					} else {
+						Logger.debug(
+							`[WRAPPER_TRACE] GRPC_ROUTE: Message type ${extMsg.type} not explicitly sent to gRPC for client ${clientId}. May fall through to webview.`,
+						)
+						// If not sent to gRPC, it will fall through to originalPostMessage below.
+					}
 				} catch (error) {
 					Logger.error(
-						`[GrpcBridge:getWrappedPostMessage] Error mapping or sending intercepted message via gRPC:`,
+						`[WRAPPER_TRACE] GRPC_ROUTE_ERROR: Error mapping or sending intercepted message via gRPC for client ${clientId}:`,
 						error,
 					)
-					return Promise.resolve()
+					// Fall through to originalPostMessage to ensure webview still gets it if gRPC path fails.
 				}
 			} else {
-				return originalPostMessage(message, taskId)
+				if (taskId) {
+					// Only log if taskId was present but conditions for gRPC routing weren't met
+					Logger.debug(
+						`[WRAPPER_TRACE] WEBVIEW_ROUTE: Not routing to gRPC for taskId ${taskId}. ClientId: ${clientId}, Notifier exists: ${!!this.grpcNotifier}. Passing to original webview handler.`,
+					)
+				} else {
+					Logger.debug(`[WRAPPER_TRACE] WEBVIEW_ROUTE: No taskId. Passing to original webview handler.`)
+				}
 			}
+
+			// If not routed to gRPC (no clientId, no notifier, or error in gRPC path, or not a gRPC-handled type)
+			// call the original function.
+			Logger.debug(
+				`[WRAPPER_TRACE] Calling original postMessageToWebview for message type ${message?.type}, taskId ${taskId}`,
+			)
+			return originalPostMessage(message, taskId)
 		}
 	}
 

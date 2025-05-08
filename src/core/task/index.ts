@@ -112,7 +112,7 @@ export class Task {
 	private mcpHub: McpHub
 	private workspaceTracker: WorkspaceTracker
 	private updateTaskHistory: (historyItem: HistoryItem) => Promise<HistoryItem[]>
-	private postStateToWebview: () => Promise<void>
+	private postStateToWebview: (taskId?: string) => Promise<void>
 	private postMessageToWebview: (message: ExtensionMessage, taskId?: string) => Promise<void>
 	private reinitExistingTaskFromId: (taskId: string) => Promise<void>
 	private cancelTask: () => Promise<void>
@@ -173,7 +173,7 @@ export class Task {
 		mcpHub: McpHub,
 		workspaceTracker: WorkspaceTracker,
 		updateTaskHistory: (historyItem: HistoryItem) => Promise<HistoryItem[]>,
-		postStateToWebview: () => Promise<void>,
+		postStateToWebview: (taskId?: string) => Promise<void>,
 		postMessageToWebview: (message: ExtensionMessage, taskId?: string) => Promise<void>,
 		reinitExistingTaskFromId: (taskId: string) => Promise<void>,
 		cancelTask: () => Promise<void>,
@@ -349,7 +349,7 @@ export class Task {
 						const errorMessage = error instanceof Error ? error.message : "Unknown error"
 						console.error("Failed to initialize checkpoint tracker:", errorMessage)
 						this.checkpointTrackerErrorMessage = errorMessage
-						await this.postStateToWebview()
+						await this.postStateToWebview(this.taskId)
 						vscode.window.showErrorMessage(errorMessage)
 						didWorkspaceRestoreFail = true
 					}
@@ -475,7 +475,7 @@ export class Task {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error"
 				console.error("Failed to initialize checkpoint tracker:", errorMessage)
 				this.checkpointTrackerErrorMessage = errorMessage
-				await this.postStateToWebview()
+				await this.postStateToWebview(this.taskId)
 				vscode.window.showErrorMessage(errorMessage)
 				relinquishButton()
 				return
@@ -676,7 +676,7 @@ export class Task {
 						text,
 						partial,
 					})
-					await this.postStateToWebview()
+					await this.postStateToWebview(this.taskId)
 					throw new Error("Current ask promise was ignored 2")
 				}
 			} else {
@@ -720,7 +720,7 @@ export class Task {
 						ask: type,
 						text,
 					})
-					await this.postStateToWebview()
+					await this.postStateToWebview(this.taskId)
 				}
 			}
 		} else {
@@ -737,7 +737,7 @@ export class Task {
 				ask: type,
 				text,
 			})
-			await this.postStateToWebview()
+			await this.postStateToWebview(this.taskId)
 		}
 
 		await pWaitFor(() => this.askResponse !== undefined || this.lastMessageTs !== askTs, { interval: 100 })
@@ -779,6 +779,7 @@ export class Task {
 					lastMessage.text = text
 					lastMessage.images = images
 					lastMessage.partial = partial
+					Logger.debug(`[TASK_TRACE:say:partial:update] Calling postMessageToWebview. TaskId: ${this.taskId}`) // Added log
 					await this.postMessageToWebview(
 						{
 							type: "partialMessage",
@@ -798,7 +799,8 @@ export class Task {
 						images,
 						partial,
 					})
-					await this.postStateToWebview()
+					Logger.debug(`[TASK_TRACE:say:partial:new] Calling postStateToWebview. TaskId: ${this.taskId}`) // Added log
+					await this.postStateToWebview(this.taskId)
 				}
 			} else {
 				// partial=false means its a complete version of a previously partial message
@@ -813,6 +815,7 @@ export class Task {
 					// instead of streaming partialMessage events, we do a save and post like normal to persist to disk
 					await this.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
+					Logger.debug(`[TASK_TRACE:say:complete:update] Calling postMessageToWebview. TaskId: ${this.taskId}`) // Added log
 					await this.postMessageToWebview(
 						{
 							type: "partialMessage",
@@ -831,7 +834,8 @@ export class Task {
 						text,
 						images,
 					})
-					await this.postStateToWebview()
+					Logger.debug(`[TASK_TRACE:say:complete:new] Calling postStateToWebview. TaskId: ${this.taskId}`) // Added log
+					await this.postStateToWebview(this.taskId)
 				}
 			}
 		} else {
@@ -845,7 +849,8 @@ export class Task {
 				text,
 				images,
 			})
-			await this.postStateToWebview()
+			Logger.debug(`[TASK_TRACE:say:non-partial] Calling postStateToWebview. TaskId: ${this.taskId}`) // Added log
+			await this.postStateToWebview(this.taskId)
 		}
 	}
 
@@ -864,7 +869,7 @@ export class Task {
 		if (lastMessage?.partial && lastMessage.type === type && (lastMessage.ask === askOrSay || lastMessage.say === askOrSay)) {
 			this.clineMessages.pop()
 			await this.saveClineMessagesAndUpdateHistory()
-			await this.postStateToWebview()
+			await this.postStateToWebview(this.taskId)
 		}
 	}
 
@@ -876,7 +881,7 @@ export class Task {
 		this.clineMessages = []
 		this.apiConversationHistory = []
 
-		await this.postStateToWebview()
+		await this.postStateToWebview(this.taskId)
 
 		await this.say("text", task, images)
 
@@ -3612,7 +3617,7 @@ export class Task {
 			request: userContent.map((block) => formatContentBlockToMarkdown(block)).join("\n\n"),
 		} satisfies ClineApiReqInfo)
 		await this.saveClineMessagesAndUpdateHistory()
-		await this.postStateToWebview()
+		await this.postStateToWebview(this.taskId)
 
 		try {
 			let cacheWriteTokens = 0
@@ -3804,7 +3809,7 @@ export class Task {
 					}
 					updateApiReqMsg()
 					await this.saveClineMessagesAndUpdateHistory()
-					await this.postStateToWebview()
+					await this.postStateToWebview(this.taskId)
 				})
 			}
 
@@ -3828,7 +3833,7 @@ export class Task {
 
 			updateApiReqMsg()
 			await this.saveClineMessagesAndUpdateHistory()
-			await this.postStateToWebview()
+			await this.postStateToWebview(this.taskId)
 
 			// now add to apiconversationhistory
 			// need to save assistant responses to file before proceeding to tool use since user can exit at any moment and we wouldn't be able to save the assistant's response
