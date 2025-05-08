@@ -31,7 +31,49 @@ import { Controller } from "../../core/controller" // Import Controller type
 
 // --- Proto loading moved inside startExternalGrpcServer ---
 
-export class GrpcNotifier extends EventEmitter {}
+export class GrpcNotifier extends EventEmitter {
+	override emit(eventName: string | symbol, ...args: any[]): boolean {
+		const eventNameStr = eventName.toString()
+		// Assuming the first arg is typically clientId for our relevant events
+		const clientId = args.length > 0 ? args[0] : "unknown_client"
+		let messageDetails = ""
+
+		if (eventNameStr === "sayUpdate" && args.length > 1 && args[1]) {
+			// args[1] is protoClineMsg
+			const protoClineMsg = args[1]
+			const partial = args.length > 2 ? args[2] : "unknown_partial_status"
+			let textSnippet = ""
+			if (protoClineMsg.textBlock?.text) {
+				textSnippet = protoClineMsg.textBlock.text.substring(0, 50).replace(/\n/g, "\\n") + "..."
+			} else if (protoClineMsg.toolUseBlock) {
+				textSnippet = `ToolUse: ${protoClineMsg.toolUseBlock.name}`
+			} else if (protoClineMsg.toolResultBlock) {
+				textSnippet = `ToolResult: ${protoClineMsg.toolResultBlock.toolUseId}`
+			}
+			messageDetails = `(clientId: ${clientId}, partial: ${partial}, content: ${textSnippet})`
+		} else if (eventNameStr === "stateUpdate" && args.length > 1 && args[1]) {
+			const state = args[1] // protoState
+			messageDetails = `(clientId: ${clientId}, tasks: ${state.tasks?.length}, mcpServers: ${state.mcpServers?.length})`
+		} else if (eventNameStr === "askRequest" && args.length > 1 && args[1]) {
+			const protoClineMsg = args[1]
+			let askDetails = ""
+			if (protoClineMsg.textBlock?.text) {
+				askDetails = protoClineMsg.textBlock.text.substring(0, 50).replace(/\n/g, "\\n") + "..."
+			}
+			messageDetails = `(clientId: ${clientId}, askContent: ${askDetails})`
+		} else if (eventNameStr === "error" && args.length > 1) {
+			messageDetails = `(clientId: ${clientId}, error: ${String(args[1]).substring(0, 100)})`
+		} else {
+			messageDetails = `(clientId: ${clientId}, args: ${util.inspect(args.slice(1), { depth: 0, breakLength: Infinity })})`
+		}
+
+		const logMessage = `[GrpcNotifier] Emitting event: '${eventNameStr}' ${messageDetails}`
+		Logger.info(logMessage) // For VSCode console
+		appendToGrpcLogFile(logMessage) // For file log
+
+		return super.emit(eventName, ...args)
+	}
+}
 
 let server: grpc.Server | null = null
 let grpcNotifier: GrpcNotifier | null = null

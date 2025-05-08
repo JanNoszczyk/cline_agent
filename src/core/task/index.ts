@@ -816,6 +816,9 @@ export class Task {
 					await this.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
 					Logger.debug(`[TASK_TRACE:say:complete:update] Calling postMessageToWebview. TaskId: ${this.taskId}`) // Added log
+					Logger.debug(
+						`[TASK_TRACE:say:complete:update] Task ${this.taskId} sending final text message: ${text?.substring(0, 50)}...`,
+					) // Added log
 					await this.postMessageToWebview(
 						{
 							type: "partialMessage",
@@ -835,6 +838,9 @@ export class Task {
 						images,
 					})
 					Logger.debug(`[TASK_TRACE:say:complete:new] Calling postStateToWebview. TaskId: ${this.taskId}`) // Added log
+					Logger.debug(
+						`[TASK_TRACE:say:complete:new] Task ${this.taskId} sending final text message: ${text?.substring(0, 50)}...`,
+					) // Added log
 					await this.postStateToWebview(this.taskId)
 				}
 			}
@@ -850,6 +856,9 @@ export class Task {
 				images,
 			})
 			Logger.debug(`[TASK_TRACE:say:non-partial] Calling postStateToWebview. TaskId: ${this.taskId}`) // Added log
+			Logger.debug(
+				`[TASK_TRACE:say:non-partial] Task ${this.taskId} sending final text message: ${text?.substring(0, 50)}...`,
+			) // Added log
 			await this.postStateToWebview(this.taskId)
 		}
 	}

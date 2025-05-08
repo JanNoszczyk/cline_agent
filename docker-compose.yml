@@ -24,6 +24,14 @@ services:
             # Mount local ./workspace to /home/workspace inside the container
             # Use 'cached' for better performance on macOS/Windows
             - ./workspace:/home/workspace:cached
+            # Mount local ./run_logs to /app/logs for log file persistence
+            # IMPORTANT: Create the ./run_logs directory locally before running 'docker compose up'
+            - ./run_logs:/app/logs:rw
+            # Mount Cline's extension globalStorage (removed as log seems to be in /tmp)
+            # - ./run_logs/cline_extension_logs:/home/openvscode-server/.openvscode-server/data/User/globalStorage/saoudrizwan.claude-dev/:rw
+            # Mount the specific Cline gRPC debug log file from /tmp
+            # IMPORTANT: Docker needs a *file* to exist locally to mount a single file. Create an empty ./run_logs/grpc_server_debug.log first.
+            - ./run_logs/grpc_server_debug.log:/tmp/grpc_server_debug.log:rw
             # Mount necessary build/runtime artifacts (ensure these paths are correct relative to compose file)
             # entrypoint.sh is now copied and permissioned within the Dockerfile build
             # Removed volume mount for .vsix file as it's copied during build in Dockerfile

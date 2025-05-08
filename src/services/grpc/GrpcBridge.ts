@@ -254,9 +254,19 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 							Logger.info(
 								`[GrpcBridge:StartTask] Task ${currentTaskId} disposed. Ending stream for client ${clientId}.`,
 							)
-							cleanupListeners()
+							cleanupListeners() // Keep this
+
 							if (!call.writableEnded) {
+								// End the stream as the task is disposed.
+								// The client will detect completion from the final SAY_COMPLETION_RESULT message.
+								Logger.info(
+									`[GrpcBridge:StartTask:onDispose] Task ${currentTaskId} disposed. Ending stream for client ${clientId}.`,
+								)
 								call.end()
+							} else {
+								Logger.warn(
+									`[GrpcBridge:StartTask:onDispose] Stream for task ${currentTaskId} already ended. Task was disposed.`,
+								)
 							}
 						})
 
@@ -1103,8 +1113,13 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 								if (protoClineMsg) {
 									// Determine if it's an 'ask' or 'say' based on internal ClineMessage structure
 									if (extMsg.partialMessage.type === "say") {
+										const sayPayload = extMsg.partialMessage
+										const logText =
+											sayPayload.text && sayPayload.text.length < 100
+												? `"${sayPayload.text.replace(/\n/g, "\\n")}"`
+												: `(length: ${sayPayload.text?.length})`
 										Logger.info(
-											`[WRAPPER_TRACE] GRPC_ROUTE: Emitting sayUpdate for client ${clientId} (type: ${extMsg.partialMessage.say}, partial: ${extMsg.partialMessage.partial}, text len: ${extMsg.partialMessage.text?.length}).`,
+											`[WRAPPER_TRACE] GRPC_ROUTE: Emitting sayUpdate for client ${clientId} (taskId: ${taskId}, type: ${sayPayload.say}, partial: ${sayPayload.partial}, text: ${logText}).`,
 										)
 										this.grpcNotifier.emit(
 											"sayUpdate", // This should trigger call.write in StartTask

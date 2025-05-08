@@ -1,26 +1,21 @@
-# Product Context: Cline gRPC Integration
+# Product Context: Cline gRPC Integration (Summary)
 
 ## 1. Problem Solved
-
-Running AI coding agents directly within a user's local VSCode instance presents challenges for platforms aiming to provide managed, isolated coding environments. There's a need to:
-
-*   **Isolate Execution:** Prevent agent actions from affecting the user's host system or other users' environments.
-*   **Manage Resources:** Control the computational resources consumed by each agent instance.
-*   **Centralize Control:** Allow a backend system to manage the lifecycle and interactions of multiple agent instances.
-*   **Scalability:** Enable scaling the deployment of coding agents independently of individual user setups.
+Addresses challenges of running AI agents in local VSCode for managed platforms by enabling:
+*   **Isolation:** Prevents agent impact on host/other users.
+*   **Resource Management:** Controls agent computational use.
+*   **Centralized Control:** Backend management of multiple agent lifecycles.
+*   **Scalability:** Independent scaling of agent deployment.
 
 ## 2. How It Should Work
-
-The integration should allow a central backend system (via gRPC) to:
-
-1.  **Spawn:** Request the creation of a new Cline agent instance within a dedicated, isolated environment (e.g., a Docker container).
-2.  **Initiate:** Start a coding task within that agent instance by providing the initial prompt/instructions.
-3.  **Interact:** Relay user inputs, responses to agent questions (like approvals or clarifications), and tool results to the agent.
-4.  **Monitor:** Receive all output from the agent, including generated text, requests for tool usage, questions for the user, and status updates.
-5.  **Terminate:** Stop the agent instance and its environment when the task is complete or aborted.
+A central backend (via gRPC) should be able to:
+1.  **Spawn:** Create new Cline instances in isolated environments (e.g., Docker).
+2.  **Initiate:** Start tasks with initial prompts.
+3.  **Interact:** Relay I/O (user inputs, agent questions, tool results).
+4.  **Monitor:** Receive all agent output (text, tool calls, status).
+5.  **Terminate:** Stop agent instances and environments.
 
 ## 3. User Experience Goals
-
-*   **Seamless Integration:** From the perspective of the platform user interacting with the agent, the experience should be similar to using Cline directly, despite the underlying sandboxing.
-*   **Reliability:** The gRPC communication and sandboxing should be robust and handle errors gracefully.
-*   **Security:** The sandboxing must effectively isolate the agent's execution environment.
+*   **Seamlessness:** User interaction should feel like direct Cline use.
+*   **Reliability:** Robust gRPC communication and sandboxing.
+*   **Security:** Effective agent execution isolation.

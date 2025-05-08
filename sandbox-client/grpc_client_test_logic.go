@@ -559,14 +559,23 @@ func runGrpcTest(conn *grpc.ClientConn) {
 			if resp != nil {
 				log.Printf("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received message on StartTask stream: Type=%s", resp.GetType())
 				allReceivedMessages = append(allReceivedMessages, resp) // Store message
-				// Add detailed logging of payload here if needed
+
+				// --- Check for Task Completion Message ---
+				if resp.GetType() == tpb.ExtensionMessageType_PARTIAL_MESSAGE {
+					clineMsg := resp.GetPartialMessage()
+					if clineMsg != nil && !clineMsg.GetPartial() && clineMsg.GetSayType() == tpb.ClineSayType_SAY_COMPLETION_RESULT {
+						log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received final completion message (PARTIAL_MESSAGE, partial=false, say_type=SAY_COMPLETION_RESULT). Breaking loop.")
+						break // Exit loop gracefully on completion message
+					}
+				}
+				// --- End Task Completion Check ---
+
 			} else {
 				// This case (nil response, nil error) should ideally not happen with Recv()
 				log.Println("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] Received nil response and nil error. Unexpected.")
 			}
 
-			// Optional: Add a check here to break the loop if a specific "task complete" message is received,
-			// otherwise it relies on EOF or error/timeout.
+			// Loop continues if no error and not the completion message
 		}
 	endLoop: // Label for goto statement
 		log.Println("[gRPC-Info: GoClient:runGrpcTest] Exited 'for' receiving loop.")

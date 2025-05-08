@@ -1,49 +1,38 @@
-# Tech Context: Cline gRPC Integration
+# Tech Context: Cline gRPC Integration (Summary)
 
 ## 1. Core Technologies
-
 *   **Language:** TypeScript
 *   **Framework:** VSCode Extension API
-*   **UI:** React (for the webview)
-*   **Communication (Internal):** VSCode `postMessage` API between extension host and webview.
-*   **Communication (External):** gRPC
+*   **UI:** React (webview)
+*   **Communication:** VSCode `postMessage` (internal), gRPC (external)
 
 ## 2. Key Libraries & Tools
+*   **`@grpc/grpc-js`:** Node.js gRPC server.
+*   **`google-protobuf`:** Protobuf message handling.
+*   **`protoc` & `ts-protoc-gen`:** Protobuf compilation to TypeScript.
+*   **VSCode API:** Editor interaction, state, webviews.
+*   **Node.js:** Extension host runtime.
 
-*   **`@grpc/grpc-js`:** Node.js library for implementing the gRPC server.
-*   **`google-protobuf`:** Library for working with Protobuf messages in JavaScript/TypeScript.
-*   **Protobuf Compiler (`protoc`):** Used with plugins (`ts-protoc-gen`) to generate TypeScript definitions and service interfaces from `.proto` files (build process likely managed by `proto/build-proto.js`).
-*   **VSCode API:** Used extensively for interacting with the editor, managing state, webviews, etc.
-*   **Node.js:** The runtime environment for the VSCode extension host.
+## 3. Relevant Project Files
+*   **Protos:** `proto/*.proto` (esp. `task_control.proto`)
+*   **Proto Build:** `proto/build-proto.js`
+*   **Generated Protos:** `src/shared/proto/`
+*   **gRPC Server:** `src/services/grpc/server.ts`
+*   **Mapping (Cline <=> Proto):** `src/services/grpc/mapper.ts`
+*   **Core Logic:** `src/extension.ts`, `src/core/controller/index.ts`, `src/core/task/index.ts`, `src/core/webview/index.ts`
+*   **Bridge:** `src/services/grpc/GrpcBridge.ts`
+*   **Test Client:** `sandbox-client/` (Go)
 
-## 3. Relevant Project Files & Locations
+## 4. Development & Build
+*   **Deps:** `package.json` (root, `proto/`). `npm install`.
+*   **Proto Compile:** `node proto/build-proto.js` (or npm script) -> generates TS from `.proto`.
+*   **TS Compile:** `tsc` or `esbuild`. Check `package.json` scripts.
+*   **CRITICAL: Update Sandbox VSIX:** Run `bash scripts/update-sandbox-vsix.sh` after ANY `src/` changes and BEFORE `docker compose up`. This copies the new `.vsix` to `sandbox-client/`.
+*   **Run/Debug:** VSCode "Run and Debug" panel.
 
-*   **Protobuf Definitions:** `proto/*.proto` (e.g., `task_control.proto`, `task.proto`)
-*   **Protobuf Build Script:** `proto/build-proto.js`
-*   **Generated Protobuf Code:** `src/shared/proto/` (output of `proto/build-proto.js`)
-*   **gRPC Server Implementation:** `src/services/grpc/server.ts`
-*   **Type Mapping (Cline <-> Proto):** `src/services/grpc/mapper.ts`
-*   **Protobuf Utilities:** `src/utils/proto-mapper.ts` (Note: This file might be legacy or less used now with `mapper.ts` being central)
-*   **Core Extension Logic:**
-    *   `src/extension.ts` (Entry point, initialization)
-    *   `src/core/controller/index.ts` (Controller class)
-    *   `src/core/task/index.ts` (Task class)
-    *   `src/core/webview/index.ts` (WebviewProvider class)
-*   **New Integration Component:** `src/services/grpc/GrpcBridge.ts`
-*   **External Test Client:** `sandbox-client/` (Go-based gRPC client)
-
-## 4. Development Setup & Build Process
-
-*   **Dependencies:** Managed via `package.json` (root) and potentially `proto/package.json`. Use `npm install`.
-*   **Protobuf Compilation:** Requires running the script in `proto/build-proto.js` (e.g., `node proto/build-proto.js` or via an `npm script`) to generate TypeScript code from `.proto` files *before* compiling the main extension TypeScript code.
-*   **TypeScript Compilation:** Uses `tsc` (via `tsconfig.json`) or potentially `esbuild` (as suggested by `esbuild.js` in the root). Check `package.json` scripts for build commands (e.g., `npm run compile`, `npm run build`).
-*   **Updating Sandbox Extension (CRITICAL STEP):** After **ANY** changes to the core extension code (files within the `src/` directory), it is **MANDATORY** to run `bash scripts/update-sandbox-vsix.sh`. This script rebuilds the extension `.vsix` file and copies it to the `sandbox-client/` directory. This step **MUST** be performed *before* running `docker compose up ...` to ensure the Docker container uses the latest version of the extension. Failure to do so will result in the Docker container using a stale version of the extension.
-*   **Running/Debugging:** Typically done via VSCode's "Run and Debug" panel (launch configurations likely in `.vscode/launch.json`).
-
-## 5. Technical Constraints & Considerations
-
-*   **VSCode Extension Environment:** Code runs within the VSCode extension host process.
-*   **Asynchronous Nature:** Heavy reliance on async/await due to I/O (gRPC, VSCode API, file system).
-*   **State Management:** Need to carefully manage the mapping between gRPC client IDs and Cline `Task` instances.
-*   **Non-Invasive Integration:** The goal is to integrate the gRPC bridge with minimal changes to the core `Controller` and `Task` classes. Wrapping/interception techniques are preferred over direct modification.
-*   **Error Handling:** Robust error handling is needed for gRPC communication and potential issues during task execution or state mapping.
+## 5. Constraints & Considerations
+*   Runs in VSCode extension host.
+*   Async heavy (gRPC, VSCode API).
+*   Careful state management for gRPC client ID <-> `Task` mapping.
+*   Prefer non-invasive integration (wrappers/interceptors).
+*   Robust gRPC error handling.

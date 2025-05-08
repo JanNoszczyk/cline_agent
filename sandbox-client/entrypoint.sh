@@ -8,6 +8,14 @@ VSCODE_SERVER_PID=""
 GO_CLIENT_PID=""
 # ACTIVATION_KEEPER_PID="" # Activation keeper is disabled
 
+# Define log file paths
+LOG_DIR="/app/logs"
+VSCODE_LOG_FILE="${LOG_DIR}/vscode_server.log"
+GO_CLIENT_LOG_FILE="${LOG_DIR}/go_client.log"
+
+# Ensure log directory exists
+mkdir -p ${LOG_DIR}
+
 # Function to handle cleanup on exit
 cleanup() {
     echo "Shutting down services..."
@@ -57,9 +65,9 @@ echo "Starting OpenVSCode Server on port ${VSCODE_INTERNAL_PORT}..."
   --port ${VSCODE_INTERNAL_PORT} \
   --extensions-dir /home/openvscode-server/.openvscode-server/extensions \
   --without-connection-token \
-  --log=info & # Changed log level to info and removed verbose
+  --log=info > "${VSCODE_LOG_FILE}" 2>&1 &
 VSCODE_SERVER_PID=$!
-echo "OpenVSCode Server started with PID ${VSCODE_SERVER_PID}, logs will go to container stdout/stderr"
+echo "OpenVSCode Server started with PID ${VSCODE_SERVER_PID}, logs will go to ${VSCODE_LOG_FILE}"
 
 # Wait for VS Code Server port 3000 to be listening
 echo "Waiting for OpenVSCode Server to listen on port ${VSCODE_INTERNAL_PORT}..."
@@ -155,17 +163,18 @@ echo "Setting PLAYWRIGHT_BROWSERS_PATH to ${PLAYWRIGHT_BROWSERS_PATH}"
 if true; then # <<< Force this condition to always be true
   echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in TEST mode (background for debugging)..."
   # Run in background to allow script to continue to 'wait $VSCODE_SERVER_PID'
-  /final-app/sandbox-binary -test &
+  # Redirect Go client output to its log file
+  /final-app/sandbox-binary -test > "${GO_CLIENT_LOG_FILE}" 2>&1 &
 else
   # This block will now never be reached
   echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in default mode..."
-  /final-app/sandbox-binary &
+  /final-app/sandbox-binary > "${GO_CLIENT_LOG_FILE}" 2>&1 &
 fi
 GO_CLIENT_PID=$! # This will be the PID of the backgrounded Go client
-echo "Go client started in background with PID ${GO_CLIENT_PID}"
+echo "Go client started in background with PID ${GO_CLIENT_PID}, logs will go to ${GO_CLIENT_LOG_FILE}"
 
 # Keep the container running by waiting for the primary VS Code server process
-echo "Container setup complete. Monitoring background processes (VSCode Server: ${VSCODE_SERVER_PID}, Go Client: ${GO_CLIENT_PID})..."
+echo "Container setup complete. Monitoring background processes (VSCode Server: ${VSCODE_SERVER_PID}, Go Client: ${GO_CLIENT_PID}). Logs are in ${LOG_DIR}/"
 # Wait specifically for the VS Code server process to exit.
 # This will keep the script running in the foreground until VSCode Server stops.
 wait $VSCODE_SERVER_PID

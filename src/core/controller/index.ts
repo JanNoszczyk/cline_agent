@@ -7,6 +7,7 @@ import { setTimeout as setTimeoutPromise } from "node:timers/promises"
 import pWaitFor from "p-wait-for"
 import * as path from "path"
 import * as vscode from "vscode"
+import { Logger } from "@services/logging/Logger" // Added import
 import { handleGrpcRequest } from "./grpc-handler"
 import { buildApiHandler } from "@api/index"
 import { cleanupLegacyCheckpoints } from "@integrations/checkpoints/CheckpointMigration"
@@ -158,7 +159,7 @@ export class Controller {
 			this.workspaceTracker,
 			(historyItem) => this.updateTaskHistory(historyItem),
 			(taskId?: string) => this.postStateToWebview(taskId),
-			(message) => this.postMessageToWebview(message),
+			(message, taskId) => this.postMessageToWebview(message, taskId), // Pass taskId here
 			(taskId) => this.reinitExistingTaskFromId(taskId),
 			() => this.cancelTask(),
 			apiConfiguration,
@@ -184,6 +185,7 @@ export class Controller {
 
 	// Send any JSON serializable data to the react app, optionally specifying the originating taskId
 	async postMessageToWebview(message: ExtensionMessage, taskId?: string) {
+		Logger.debug(`[CONTROLLER_TRACE:postMessageToWebview] Posting message type '${message.type}' with taskId '${taskId}'`) // Added log
 		// Pass the message and taskId to the underlying postMessage function
 		// (which might be the original WebviewProvider.postMessage or the GrpcBridge wrapper)
 		// @ts-expect-error - Assuming the underlying postMessage function will be updated to accept taskId
