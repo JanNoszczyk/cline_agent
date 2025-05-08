@@ -86,8 +86,10 @@ RUN echo "--- Listing /app/sandbox-client contents after final proto copy ---" &
 WORKDIR /app/sandbox-client
 # Run tidy *after* all code is present
 RUN go mod tidy -v
-# Verify package listing *after* tidy
-RUN echo "--- Listing Go packages found (after tidy) ---" && go list ./... && echo "--- End Go packages list (after tidy) ---"
+# Explicitly get dependencies to ensure they are downloaded
+RUN go get -v ./...
+# Verify package listing *after* tidy and get
+RUN echo "--- Listing Go packages found (after tidy and get) ---" && go list ./... && echo "--- End Go packages list (after tidy and get) ---"
 # Build the main package
 RUN go build -v -x -buildvcs=false -ldflags="-w -s" -o /sandbox-binary .
 

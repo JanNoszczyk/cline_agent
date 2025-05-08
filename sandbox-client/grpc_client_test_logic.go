@@ -412,50 +412,18 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 		// Only proceed with receiving if SendUserInput didn't error out initially
 		if err == nil {
-
-			// --- Receiving Loop Setup for SendUserInput Stream ---
-			log.Println("[gRPC-Debug: GoClient:runGrpcTest] Setting up channels and goroutine for receiving messages from SendUserInput stream...")
-			inputMsgChan := make(chan *tpb.ExtensionMessage) // <<< Use tpb alias
-			inputErrChan := make(chan error)
-
-			// Goroutine to receive messages from the SendUserInput stream
-			go func() {
-				for {
-					resp, err := inputStream.Recv() // Receive from the SendUserInput stream
-					if err != nil {
-						log.Printf("[gRPC-Error: GoClient:runGrpcTest:InputRecvLoop] Error receiving from SendUserInput stream: %v", err)
-						inputErrChan <- err
-						return
-					}
-					log.Printf("[gRPC-Info: GoClient:runGrpcTest:InputRecvLoop] Received message: Type=%s", resp.GetType())
-					inputMsgChan <- resp
-				}
-			}()
-
-			// --- Listen Briefly on the SendUserInput Stream ---
-			log.Println("[gRPC-Info: GoClient:runGrpcTest] Now listening on the SendUserInput stream for ~5 seconds...")
-			postUserInputTimeout := time.After(5 * time.Second) // Shorter timeout for this part
-			keepListening := true
-			for keepListening {
-				select {
-				case resp := <-inputMsgChan:
-					log.Printf("[gRPC-Info: GoClient:runGrpcTest:InputSelectLoop] Received stream update: Type=%s", resp.GetType())
-					// Add more detailed logging if needed
-				case err := <-inputErrChan:
-					if err == io.EOF {
-						log.Println("[gRPC-Info: GoClient:runGrpcTest:InputSelectLoop] SendUserInput Stream finished (EOF).")
-					} else {
-						log.Printf("[gRPC-Error: GoClient:runGrpcTest:InputSelectLoop] Error receiving from SendUserInput stream: %v", err)
-					}
-					keepListening = false
-				case <-postUserInputTimeout:
-					log.Println("[gRPC-Info: GoClient:runGrpcTest:InputSelectLoop] Finished listening on SendUserInput stream after 5s timeout.")
-					keepListening = false
-				// <<< Use baseCtx here for overall test timeout check
-				case <-baseCtx.Done():
-					log.Printf("[gRPC-Warn: GoClient:runGrpcTest:InputSelectLoop] Overall test context done while listening on SendUserInput stream: %v", baseCtx.Err())
-					keepListening = false
-				}
+			// The SendUserInput stream is typically closed by the server immediately after processing the input.
+			// The client should not expect to receive ongoing messages on this specific stream.
+			// Responses from the AI will come through the main StartTask stream.
+			// We can, however, wait for the stream to close to confirm the server received it.
+			log.Println("[gRPC-Debug: GoClient:runGrpcTest] Waiting for SendUserInput stream to close...")
+			_, recvErr := inputStream.Recv() // Attempt one Recv to get EOF or an unexpected error
+			if recvErr == io.EOF {
+				log.Println("[gRPC-Info: GoClient:runGrpcTest] SendUserInput stream closed by server (EOF), input likely processed.")
+			} else if recvErr != nil {
+				log.Printf("[gRPC-Warn: GoClient:runGrpcTest] Error/unexpected message on SendUserInput stream after sending: %v", recvErr)
+			} else {
+				log.Println("[gRPC-Warn: GoClient:runGrpcTest] Received unexpected message on SendUserInput stream. Expected EOF.")
 			}
 		} // End of 'if err == nil' for SendUserInput
 
@@ -482,48 +450,44 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 		// Only proceed if the second call didn't error
 		if err == nil {
-			// --- Receiving Loop Setup for Second SendUserInput Stream ---
-			log.Println("[gRPC-Debug: GoClient:runGrpcTest] Setting up channels and goroutine for receiving messages from SECOND SendUserInput stream...")
-			secondInputMsgChan := make(chan *tpb.ExtensionMessage)
-			secondInputErrChan := make(chan error)
-
-			go func() {
-				for {
-					resp, err := secondInputStream.Recv()
-					if err != nil {
-						log.Printf("[gRPC-Error: GoClient:runGrpcTest:SecondInputRecvLoop] Error receiving from second SendUserInput stream: %v", err)
-						secondInputErrChan <- err
-						return
-					}
-					log.Printf("[gRPC-Info: GoClient:runGrpcTest:SecondInputRecvLoop] Received message: Type=%s", resp.GetType())
-					secondInputMsgChan <- resp
-				}
-			}()
-
-			// --- Listen Briefly on the Second SendUserInput Stream ---
-			log.Println("[gRPC-Info: GoClient:runGrpcTest] Now listening on the SECOND SendUserInput stream for ~5 seconds...")
-			secondPostUserInputTimeout := time.After(5 * time.Second)
-			secondKeepListening := true
-			for secondKeepListening {
-				select {
-				case resp := <-secondInputMsgChan:
-					log.Printf("[gRPC-Info: GoClient:runGrpcTest:SecondInputSelectLoop] Received stream update: Type=%s", resp.GetType())
-				case err := <-secondInputErrChan:
-					if err == io.EOF {
-						log.Println("[gRPC-Info: GoClient:runGrpcTest:SecondInputSelectLoop] Second SendUserInput Stream finished (EOF).")
-					} else {
-						log.Printf("[gRPC-Error: GoClient:runGrpcTest:SecondInputSelectLoop] Error receiving from second SendUserInput stream: %v", err)
-					}
-					secondKeepListening = false
-				case <-secondPostUserInputTimeout:
-					log.Println("[gRPC-Info: GoClient:runGrpcTest:SecondInputSelectLoop] Finished listening on second SendUserInput stream after 5s timeout.")
-					secondKeepListening = false
-				case <-baseCtx.Done():
-					log.Printf("[gRPC-Warn: GoClient:runGrpcTest:SecondInputSelectLoop] Overall test context done while listening on second SendUserInput stream: %v", baseCtx.Err())
-					secondKeepListening = false
-				}
+			// Similar to the first SendUserInput, wait for this stream to close.
+			log.Println("[gRPC-Debug: GoClient:runGrpcTest] Waiting for second SendUserInput stream to close...")
+			_, recvErr := secondInputStream.Recv()
+			if recvErr == io.EOF {
+				log.Println("[gRPC-Info: GoClient:runGrpcTest] Second SendUserInput stream closed by server (EOF), input likely processed.")
+			} else if recvErr != nil {
+				log.Printf("[gRPC-Warn: GoClient:runGrpcTest] Error/unexpected message on second SendUserInput stream after sending: %v", recvErr)
+			} else {
+				log.Println("[gRPC-Warn: GoClient:runGrpcTest] Received unexpected message on second SendUserInput stream. Expected EOF.")
 			}
 		} // End of 'if err == nil' for second SendUserInput
+
+		// At this point, the client should continue listening on the main 'startStream'
+		// for actual AI responses or further interactions related to the task.
+		// The test can simulate this by waiting for a certain duration or specific messages on 'startStream'.
+		log.Println("[gRPC-Info: GoClient:runGrpcTest] Simulating listening on StartTask stream for further AI responses for 10 seconds...")
+		finalListenTimeout := time.After(10 * time.Second)
+		keepListeningOnStartStream := true
+		for keepListeningOnStartStream {
+			select {
+			case resp := <-startMsgChan:
+				log.Printf("[gRPC-Info: GoClient:runGrpcTest:FinalStartStreamListen] Received message on StartTask stream: Type=%s", resp.GetType())
+				// Potentially check for specific expected messages here
+			case err := <-startErrChan:
+				if err == io.EOF {
+					log.Println("[gRPC-Info: GoClient:runGrpcTest:FinalStartStreamListen] StartTask Stream finished (EOF).")
+				} else {
+					log.Printf("[gRPC-Error: GoClient:runGrpcTest:FinalStartStreamListen] Error on StartTask stream: %v", err)
+				}
+				keepListeningOnStartStream = false
+			case <-finalListenTimeout:
+				log.Println("[gRPC-Info: GoClient:runGrpcTest:FinalStartStreamListen] Finished listening on StartTask stream after 10s timeout.")
+				keepListeningOnStartStream = false
+			case <-baseCtx.Done():
+				log.Printf("[gRPC-Warn: GoClient:runGrpcTest:FinalStartStreamListen] Overall test context done: %v", baseCtx.Err())
+				keepListeningOnStartStream = false
+			}
+		}
 
 	} else {
 		// If StartTask failed, we can't proceed with steps requiring a TaskID

@@ -756,6 +756,9 @@ export class Task {
 	}
 
 	async handleWebviewAskResponse(askResponse: ClineAskResponse, text?: string, images?: string[]) {
+		Logger.info(
+			`[Task:handleWebviewAskResponse] Received for taskId ${this.taskId}: response='${askResponse}', text='${text?.substring(0, 100)}...', images_count=${images?.length ?? 0}`,
+		)
 		this.askResponse = askResponse
 		this.askResponseText = text
 		this.askResponseImages = images
@@ -1038,6 +1041,9 @@ export class Task {
 	}
 
 	private async initiateTaskLoop(userContent: UserContent): Promise<void> {
+		Logger.info(
+			`[Task:initiateTaskLoop] Starting loop for taskId ${this.taskId} with initial userContent: ${JSON.stringify(userContent)?.substring(0, 200)}...`,
+		)
 		let nextUserContent = userContent
 		let includeFileDetails = true
 		while (!this.abort) {
@@ -1453,9 +1459,12 @@ export class Task {
 	}
 
 	async *attemptApiRequest(previousApiReqIndex: number): ApiStream {
+		Logger.info(
+			`[Task:attemptApiRequest] Attempting API request for taskId ${this.taskId}, previousApiReqIndex: ${previousApiReqIndex}`,
+		)
 		// Wait for MCP servers to be connected before generating system prompt
 		await pWaitFor(() => this.mcpHub.isConnecting !== true, { timeout: 10_000 }).catch(() => {
-			console.error("MCP servers failed to connect in time")
+			Logger.error("MCP servers failed to connect in time", new Error("MCP servers failed to connect in time"))
 		})
 
 		const disableBrowserTool = vscode.workspace.getConfiguration("cline").get<boolean>("disableBrowserTool") ?? false
@@ -1538,10 +1547,16 @@ export class Task {
 		try {
 			// awaiting first chunk to see if it will throw an error
 			this.isWaitingForFirstChunk = true
+			Logger.info(`[Task:attemptApiRequest] About to await first chunk for taskId ${this.taskId}`)
 			const firstChunk = await iterator.next()
+			Logger.info(
+				`[Task:attemptApiRequest] Received first chunk for taskId ${this.taskId}: ${JSON.stringify(firstChunk.value)?.substring(0, 100)}...`,
+			)
 			yield firstChunk.value
 			this.isWaitingForFirstChunk = false
 		} catch (error) {
+			const errorMessageString = `[Task:attemptApiRequest] Error receiving first chunk for taskId ${this.taskId}: ${error instanceof Error ? error.message : String(error)}`
+			Logger.error(errorMessageString, new Error(errorMessageString))
 			const isOpenRouter = this.api instanceof OpenRouterHandler || this.api instanceof ClineHandler
 			const isAnthropic = this.api instanceof AnthropicHandler
 			const isOpenRouterContextWindowError = checkIsOpenRouterContextWindowError(error) && isOpenRouter
@@ -3461,6 +3476,9 @@ export class Task {
 	}
 
 	async recursivelyMakeClineRequests(userContent: UserContent, includeFileDetails: boolean = false): Promise<boolean> {
+		Logger.info(
+			`[Task:recursivelyMakeClineRequests] Starting for taskId ${this.taskId}, includeFileDetails: ${includeFileDetails}, userContent: ${JSON.stringify(userContent)?.substring(0, 200)}...`,
+		)
 		if (this.abort) {
 			throw new Error("Cline instance aborted")
 		}
@@ -3638,7 +3656,7 @@ export class Task {
 					// lastMessage.ts = Date.now() DO NOT update ts since it is used as a key for virtuoso list
 					lastMessage.partial = false
 					// instead of streaming partialMessage events, we do a save and post like normal to persist to disk
-					console.log("updating partial message", lastMessage)
+					Logger.info(`updating partial message: ${JSON.stringify(lastMessage)}`)
 					// await this.saveClineMessagesAndUpdateHistory()
 				}
 
@@ -3688,12 +3706,19 @@ export class Task {
 			this.isStreaming = true
 			let didReceiveUsageChunk = false
 			try {
+				Logger.info(`[Task:recursivelyMakeClineRequests] Starting to process API stream for taskId ${this.taskId}`)
 				for await (const chunk of stream) {
 					if (!chunk) {
 						continue
 					}
+					Logger.debug(
+						`[Task:recursivelyMakeClineRequests] Received API stream chunk for taskId ${this.taskId}: type='${chunk.type}', content='${JSON.stringify(chunk).substring(0, 100)}...'`,
+					)
 					switch (chunk.type) {
 						case "usage":
+							Logger.info(
+								`[Task:recursivelyMakeClineRequests] Usage chunk for taskId ${this.taskId}: in=${chunk.inputTokens}, out=${chunk.outputTokens}`,
+							)
 							didReceiveUsageChunk = true
 							inputTokens += chunk.inputTokens
 							outputTokens += chunk.outputTokens
@@ -3710,6 +3735,9 @@ export class Task {
 							}
 							break
 						case "text":
+							Logger.debug(
+								`[Task:recursivelyMakeClineRequests] Text chunk for taskId ${this.taskId}: '${chunk.text?.substring(0, 100)}...'`,
+							)
 							if (reasoningMessage && assistantMessage.length === 0) {
 								// complete reasoning message
 								await this.say("reasoning", reasoningMessage, undefined, false)

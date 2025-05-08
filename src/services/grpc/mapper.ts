@@ -96,6 +96,22 @@ import {
 	AskUseMcpServerPayload_McpRequestType as ProtoMcpRequestType, // Import nested enum
 	// COMPLETION_RESULT_CHANGES_FLAG, // Removed import - Use string literal
 } from "../../shared/proto/task_control"
+// MCP Proto Types
+import {
+	McpServer as ProtoMcpServer,
+	McpTool as ProtoMcpTool,
+	McpResource as ProtoMcpResource,
+	McpResourceTemplate as ProtoMcpResourceTemplate,
+	McpServerStatus as ProtoMcpServerStatus,
+	McpServers as ProtoMcpServers,
+} from "../../shared/proto/mcp" // Import MCP proto types
+// Internal MCP Types
+import {
+	McpServer as InternalMcpServer,
+	McpTool as InternalMcpTool,
+	McpResource as InternalMcpResource,
+	McpResourceTemplate as InternalMcpResourceTemplate,
+} from "@shared/mcp" // Import internal MCP types
 
 import Anthropic from "@anthropic-ai/sdk" // Keep for ToolResponse type check
 import { formatResponse } from "../../core/prompts/responses"
@@ -1158,5 +1174,114 @@ export function mapExtensionStateToProto(state: InternalExtensionState | undefin
 	return protoState as ProtoExtensionState
 }
 
+// --- MCP Mappers ---
+
+// Maps InternalMcpTool to Partial<ProtoMcpTool>
+export function mapMcpToolToProto(tool: InternalMcpTool | undefined): Partial<ProtoMcpTool> | undefined {
+	if (!tool) return undefined
+
+	let inputSchemaString: string | undefined = undefined
+	if (tool.inputSchema) {
+		if (typeof tool.inputSchema === "string") {
+			inputSchemaString = tool.inputSchema
+		} else {
+			try {
+				inputSchemaString = JSON.stringify(tool.inputSchema)
+			} catch (e: any) {
+				Logger.error(`[GrpcMapper] Failed to stringify tool.inputSchema for ${tool.name}:`, e)
+				// Fallback to undefined if stringification fails
+				inputSchemaString = undefined
+			}
+		}
+	}
+
+	return {
+		name: tool.name, // Required
+		description: tool.description ?? undefined,
+		inputSchema: inputSchemaString,
+		autoApprove: tool.autoApprove ?? undefined,
+	}
+}
+
+// Maps InternalMcpResource to Partial<ProtoMcpResource>
+export function mapMcpResourceToProto(resource: InternalMcpResource | undefined): Partial<ProtoMcpResource> | undefined {
+	if (!resource) return undefined
+	return {
+		uri: resource.uri, // Required
+		name: resource.name, // Required
+		mimeType: resource.mimeType ?? undefined,
+		description: resource.description ?? undefined,
+	}
+}
+
+// Maps InternalMcpResourceTemplate to Partial<ProtoMcpResourceTemplate>
+export function mapMcpResourceTemplateToProto(
+	template: InternalMcpResourceTemplate | undefined,
+): Partial<ProtoMcpResourceTemplate> | undefined {
+	if (!template) return undefined
+	return {
+		uriTemplate: template.uriTemplate, // Required
+		name: template.name, // Required
+		mimeType: template.mimeType ?? undefined,
+		description: template.description ?? undefined,
+	}
+}
+
+// Maps InternalMcpServer['status'] to ProtoMcpServerStatus
+export function mapMcpServerStatusToProto(status: InternalMcpServer["status"] | undefined): ProtoMcpServerStatus {
+	switch (status) {
+		case "connected":
+			return ProtoMcpServerStatus.MCP_SERVER_STATUS_CONNECTED
+		case "connecting":
+			return ProtoMcpServerStatus.MCP_SERVER_STATUS_CONNECTING
+		case "disconnected":
+			return ProtoMcpServerStatus.MCP_SERVER_STATUS_DISCONNECTED
+		default:
+			return ProtoMcpServerStatus.MCP_SERVER_STATUS_DISCONNECTED // Default to disconnected if unspecified
+	}
+}
+
+// Maps InternalMcpServer to Partial<ProtoMcpServer>
+export function mapMcpServerToProto(server: InternalMcpServer | undefined): Partial<ProtoMcpServer> | undefined {
+	if (!server) return undefined
+
+	let finalConfigString: string
+	if (typeof server.config === "string") {
+		finalConfigString = server.config
+	} else if (server.config !== null && server.config !== undefined) {
+		// If server.config is an object (or any other non-string, non-null/undefined type)
+		try {
+			finalConfigString = JSON.stringify(server.config)
+		} catch (e) {
+			Logger.error(`[GrpcMapper] Failed to stringify server.config for ${server.name}:`, e)
+			finalConfigString = '{"error":"config stringification failed"}' // Fallback
+		}
+	} else {
+		// server.config is null or undefined, default to empty string for proto
+		finalConfigString = ""
+	}
+
+	return {
+		name: server.name, // Required
+		config: finalConfigString, // Now always a string
+		status: mapMcpServerStatusToProto(server.status), // Required
+		error: server.error ?? undefined,
+		tools: server.tools?.map((t) => mapMcpToolToProto(t) as ProtoMcpTool) ?? [],
+		resources: server.resources?.map((r) => mapMcpResourceToProto(r) as ProtoMcpResource) ?? [],
+		resourceTemplates:
+			server.resourceTemplates?.map((rt) => mapMcpResourceTemplateToProto(rt) as ProtoMcpResourceTemplate) ?? [],
+		disabled: server.disabled ?? undefined,
+		timeout: server.timeout ?? undefined,
+	}
+}
+
+// Maps InternalMcpServer[] to Partial<ProtoMcpServers>
+export function mapMcpServersToProto(servers: InternalMcpServer[] | undefined): Partial<ProtoMcpServers> | undefined {
+	if (!servers) return undefined
+	return {
+		mcpServers: servers.map((s) => mapMcpServerToProto(s) as ProtoMcpServer) ?? [],
+	}
+}
+
 // Export relevant Proto types for use in other modules
-export { ProtoExtensionState, ProtoToolResultBlock, ProtoToolUseBlock }
+export { ProtoExtensionState, ProtoToolResultBlock, ProtoToolUseBlock, ProtoMcpServers }
