@@ -141,7 +141,7 @@ const extensionConfig = {
 	bundle: true,
 	minify: production,
 	sourcemap: !production,
-	logLevel: "silent",
+	logLevel: "info", // Changed from "silent"
 	define: {
 		"process.env.IS_DEV": JSON.stringify(!production),
 	},
@@ -163,10 +163,10 @@ const extensionConfig = {
 	],
 	entryPoints: ["src/extension.ts"],
 	format: "cjs",
-	sourcesContent: false,
+	sourcesContent: !production, // Changed from false
 	platform: "node",
 	outfile: "dist/extension.js",
-	external: ["vscode"],
+	external: ["vscode", "@grpc/grpc-js", "google-protobuf", "events", "stream"],
 }
 
 async function main() {

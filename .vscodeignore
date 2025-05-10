@@ -3,6 +3,8 @@
 .vscode-test/**
 out/**
 node_modules/**
+!node_modules/@grpc/grpc-js/**
+!node_modules/google-protobuf/**
 src/**
 .gitignore
 .yarnrc

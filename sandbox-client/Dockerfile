@@ -118,8 +118,10 @@ ENV LANG=en_US.UTF-8 \
 # Install minimal runtime dependencies (Node.js, Bash, Chromium, Playwright, netcat, unzip, dos2unix)
 RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     bash curl wget gnupg sudo procps chromium-browser netcat-traditional unzip dos2unix \
-    && curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - \
     && sudo apt-get install -y nodejs \
+    && sudo npm install -g n \
+    && sudo n 22 \
     && npx playwright install-deps \
     && sudo npm install -g --unsafe-perm=true playwright \
     && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/*

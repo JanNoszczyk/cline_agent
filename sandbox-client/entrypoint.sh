@@ -64,8 +64,11 @@ echo "Starting OpenVSCode Server on port ${VSCODE_INTERNAL_PORT}..."
   --host 0.0.0.0 \
   --port ${VSCODE_INTERNAL_PORT} \
   --extensions-dir /home/openvscode-server/.openvscode-server/extensions \
+  --user-data-dir /home/openvscode-server/.openvscode-server/data \
   --without-connection-token \
-  --log=info > "${VSCODE_LOG_FILE}" 2>&1 &
+  --log=info \
+  --default-folder=/home/workspace \
+  > "${VSCODE_LOG_FILE}" 2>&1 &
 VSCODE_SERVER_PID=$!
 echo "OpenVSCode Server started with PID ${VSCODE_SERVER_PID}, logs will go to ${VSCODE_LOG_FILE}"
 

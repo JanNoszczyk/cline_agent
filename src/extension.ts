@@ -32,7 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(outputChannel)
 
 	ErrorService.initialize()
-	Logger.initialize(outputChannel)
+	Logger.initialize(outputChannel, context) // Pass context here
 	Logger.log("Cline extension activated")
 
 	const sidebarWebview = new WebviewProvider(context, outputChannel)
