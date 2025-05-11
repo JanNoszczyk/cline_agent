@@ -28,6 +28,8 @@ let outputChannel: vscode.OutputChannel
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+	console.log("[DEBUG] Activating extension... (Error throw removed)") // Modified log
+	// throw new Error('[DEBUG THROW] ACTIVATE CALLED'); // Forceful activation check REMOVED
 	outputChannel = vscode.window.createOutputChannel("Cline")
 	context.subscriptions.push(outputChannel)
 
@@ -38,6 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const sidebarWebview = new WebviewProvider(context, outputChannel)
 
 	// --- gRPC Bridge Initialization ---
+	console.log("[DEBUG] Creating GrpcBridge instance...")
 	const grpcBridge = new GrpcBridge(context)
 	context.subscriptions.push(grpcBridge) // Register for disposal
 

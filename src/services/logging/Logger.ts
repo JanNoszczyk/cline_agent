@@ -35,9 +35,12 @@ export class Logger {
 
 	static initialize(outputChannel: OutputChannel, context: ExtensionContext) {
 		Logger.outputChannel = outputChannel
-		const logDir = context.globalStorageUri.fsPath
+		// Use a path that is mounted from the host via docker-compose.yml
+		const logDir = "/app/logs" // This path is mounted from ./run_logs on the host
 		try {
 			if (!fs.existsSync(logDir)) {
+				// This directory should ideally be created by the entrypoint or Dockerfile,
+				// but create it here defensively if it's missing.
 				fs.mkdirSync(logDir, { recursive: true })
 			}
 			Logger.logFilePath = path.join(logDir, "cline_extension.log")

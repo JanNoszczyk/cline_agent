@@ -21,18 +21,26 @@ async function main() {
 	console.log(chalk.bold.blue("Starting Protocol Buffer code generation..."))
 
 	// Define output directories
-	const TS_OUT_DIR = path.join(ROOT_DIR, "src", "shared", "proto")
+	const TS_OUT_DIR_HOST = path.join(ROOT_DIR, "src", "shared", "proto")
+	const TS_OUT_DIR_WEBVIEW = path.join(ROOT_DIR, "src", "shared", "proto_webview_types")
 	const GO_OUT_DIR = path.join(ROOT_DIR, "sandbox-client") // Output Go files directly into sandbox-client, protoc will create genproto automatically based on paths
 
-	// Create output directory if it doesn't exist
-	await fs.mkdir(TS_OUT_DIR, { recursive: true })
+	// Create output directories if they don't exist
+	await fs.mkdir(TS_OUT_DIR_HOST, { recursive: true })
+	await fs.mkdir(TS_OUT_DIR_WEBVIEW, { recursive: true })
 	await fs.mkdir(GO_OUT_DIR, { recursive: true }) // Ensure sandbox-client exists
 
 	// Clean up existing generated files
-	console.log(chalk.cyan("Cleaning up existing generated TypeScript files..."))
-	const existingFiles = await globby("**/*.ts", { cwd: TS_OUT_DIR })
-	for (const file of existingFiles) {
-		await fs.unlink(path.join(TS_OUT_DIR, file))
+	console.log(chalk.cyan("Cleaning up existing generated TypeScript files (host)..."))
+	const existingHostTsFiles = await globby("**/*.ts", { cwd: TS_OUT_DIR_HOST })
+	for (const file of existingHostTsFiles) {
+		await fs.unlink(path.join(TS_OUT_DIR_HOST, file))
+	}
+
+	console.log(chalk.cyan("Cleaning up existing generated TypeScript files (webview)..."))
+	const existingWebviewTsFiles = await globby("**/*.ts", { cwd: TS_OUT_DIR_WEBVIEW })
+	for (const file of existingWebviewTsFiles) {
+		await fs.unlink(path.join(TS_OUT_DIR_WEBVIEW, file))
 	}
 
 	// Clean up existing generated Go files (within sandbox-client/genproto)
@@ -48,50 +56,76 @@ async function main() {
 	// Process all proto files
 	console.log(chalk.cyan("Processing proto files from"), SCRIPT_DIR)
 	const protoFiles = await globby("*.proto", { cwd: SCRIPT_DIR })
+	const execOptions = { stdio: "inherit" }
 
 	for (const protoFile of protoFiles) {
-		console.log(chalk.cyan(`Generating TypeScript code for ${protoFile}...`))
-
-		// Build the protoc command with proper path handling for cross-platform
-		const protocCommand = [
+		console.log(chalk.cyan(`Generating TypeScript code (host) for ${protoFile}...`))
+		const protocCommandHost = [
 			protoc,
 			`--plugin=protoc-gen-ts_proto="${tsProtoPlugin}"`,
-			`--ts_proto_out="${TS_OUT_DIR}"`,
+			`--ts_proto_out="${TS_OUT_DIR_HOST}"`,
 			"--ts_proto_opt=outputServices=grpc-js,env=node,esModuleInterop=true,useDate=false,useOptionals=messages,useAbortSignal=true",
 			`--proto_path="${SCRIPT_DIR}"`,
 			`"${path.join(SCRIPT_DIR, protoFile)}"`,
 		].join(" ")
 
 		try {
-			const execOptions = {
-				stdio: "inherit",
-			}
-			execSync(protocCommand, execOptions)
+			execSync(protocCommandHost, execOptions)
 		} catch (error) {
-			console.error(chalk.red(`Error generating TypeScript for ${protoFile}:`), error)
+			console.error(chalk.red(`Error generating TypeScript (host) for ${protoFile}:`), error)
+			process.exit(1)
+		}
+
+		console.log(chalk.cyan(`Generating TypeScript code (webview_types) for ${protoFile}...`))
+		const webviewTsProtoOpts = [
+			"outputServices=false",
+			"outputClientImpl=false",
+			"env=browser",
+			"esModuleInterop=false", // Changed
+			"useDate=false",
+			"useOptionals=messages",
+			// "useAbortSignal=true", // Typically for client stubs, may not be needed for types only
+			"forceLong=string",
+			"outputJsonMethods=false", // Already false, keep
+			"outputPartialMethods=false", // Already false, keep
+			"outputTypeAnnotations=true", // Already true, keep
+			"outputIndex=false", // Already false, keep
+			"initializeFieldsAsUndefined=true", // New: leaner constructors
+			"exportCommonSymbols=false", // New: reduce re-exports
+			"unknownFields=false", // New: strip unknown field handling
+			"usePrototypeForDefaults=true", // New: potentially leaner/more tree-shakable
+		].join(",")
+
+		const protocCommandWebview = [
+			protoc,
+			`--plugin=protoc-gen-ts_proto="${tsProtoPlugin}"`,
+			`--ts_proto_out="${TS_OUT_DIR_WEBVIEW}"`,
+			`--ts_proto_opt=${webviewTsProtoOpts}`,
+			`--proto_path="${SCRIPT_DIR}"`,
+			`"${path.join(SCRIPT_DIR, protoFile)}"`,
+		].join(" ")
+
+		try {
+			execSync(protocCommandWebview, execOptions)
+		} catch (error) {
+			console.error(chalk.red(`Error generating TypeScript (webview_types) for ${protoFile}:`), error)
 			process.exit(1)
 		}
 
 		// --- Generate Go ---
-		// Assumes protoc-gen-go and protoc-gen-go-grpc are in PATH
-		console.log(chalk.cyan(`  -> Generating Go...`))
-		// Note: Go output needs module-relative paths. Output to sandbox-client,
-		// and use 'module=sandboxclient' option if needed, or ensure paths in proto files are correct.
-		// The paths in the .proto files should ideally not include the module name.
-		// Outputting to GO_OUT_DIR (sandbox-client) should place files in sandbox-client/genproto/...
+		console.log(chalk.cyan(`  -> Generating Go for ${protoFile}...`))
 		const goProtoCommand = [
-			protoc, // Use the grpc-tools protoc variable
-			`--proto_path="${SCRIPT_DIR}"`, // Where to find imports (.proto files)
-			// Add module option to ensure paths are relative to 'sandboxclient' module root
+			protoc,
+			`--proto_path="${SCRIPT_DIR}"`,
 			`--go_out="${GO_OUT_DIR}"`,
-			`--go_opt=module=sandboxclient`, // Specify the Go module
+			`--go_opt=module=sandboxclient`,
 			`--go-grpc_out="${GO_OUT_DIR}"`,
-			`--go-grpc_opt=module=sandboxclient`, // Specify the Go module for gRPC
-			`"${path.join(SCRIPT_DIR, protoFile)}"`, // Use the correct path variable
+			`--go-grpc_opt=module=sandboxclient`,
+			`"${path.join(SCRIPT_DIR, protoFile)}"`,
 		].join(" ")
 
 		try {
-			execSync(goProtoCommand, { stdio: "inherit" })
+			execSync(goProtoCommand, execOptions)
 		} catch (error) {
 			console.error(chalk.red(`Error generating Go for ${protoFile}:`), error.message)
 			console.error(chalk.yellow("Ensure protoc-gen-go and protoc-gen-go-grpc are installed and in your PATH."))
@@ -102,8 +136,8 @@ async function main() {
 	}
 
 	console.log(chalk.green("Protocol Buffer code generation completed successfully."))
-	console.log(chalk.green(`TypeScript files generated in: ${TS_OUT_DIR}`))
-	// Updated log message to reflect the expected path based on GO_OUT_DIR output and go_package
+	console.log(chalk.green(`TypeScript (host) files generated in: ${TS_OUT_DIR_HOST}`))
+	console.log(chalk.green(`TypeScript (webview_types) files generated in: ${TS_OUT_DIR_WEBVIEW}`))
 	console.log(chalk.green(`Go files should be generated in: ${path.join(GO_OUT_DIR, "genproto")}`))
 
 	// Generate method registration files

@@ -79,6 +79,7 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	private originalPostMessage?: PostMessageFunc // Store original using the updated type
 
 	constructor(context: vscode.ExtensionContext) {
+		console.log("[DEBUG] GrpcBridge constructor called.")
 		this.context = context
 		Logger.info("[GrpcBridge] Initializing...") // Use static Logger
 		// Server will be started in setController after controller is available
@@ -119,6 +120,8 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 
 		// Start the gRPC server now that we have the controller and wrapping is set up
 		// Corrected argument order and added async handling
+		console.log("[DEBUG] GrpcBridge initialize called.") // Corresponds to old initialize()
+		console.log("[DEBUG] Attempting to start gRPC server in GrpcBridge...")
 		startExternalGrpcServer(
 			this.context, // 1st arg: context
 			this.controller, // 2nd arg: controller instance

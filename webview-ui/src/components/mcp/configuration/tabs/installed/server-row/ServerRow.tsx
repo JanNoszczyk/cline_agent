@@ -18,7 +18,7 @@ import McpResourceRow from "./McpResourceRow"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { McpServiceClient } from "@/services/grpc-client"
 import { convertProtoMcpServersToMcpServers } from "@shared/proto-conversions/mcp/mcp-server-conversion"
-import { McpServers, UpdateMcpTimeoutRequest } from "@shared/proto/mcp"
+import { McpServers, UpdateMcpTimeoutRequest } from "@shared/proto_webview_types/mcp"
 // constant JSX.Elements
 const TimeoutOptions = [
 	{ value: "30", label: "30 seconds" },

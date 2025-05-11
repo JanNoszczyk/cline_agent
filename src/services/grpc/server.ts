@@ -117,41 +117,64 @@ export async function startExternalGrpcServer(
 	// Initialize log file path
 	if (!grpcLogFilePath) {
 		// Initialize only once
-		let logDir: string | null = null
-		let logFilename = "grpc_server_debug.log"
-		if (context.storageUri && context.storageUri.fsPath) {
-			logDir = context.storageUri.fsPath
-			console.log(`[CONSOLE External GRPC] Attempting to use context.storageUri.fsPath for logs: ${logDir}`)
-			appendToGrpcLogFile(`[CONSOLE External GRPC] Attempting to use context.storageUri.fsPath for logs: ${logDir}`)
+		const envLogPath = process.env.GRPC_SERVER_DEBUG_LOG_PATH
+		let determinedLogPath: string | null = null
+
+		console.log("[CONSOLE External GRPC] Initializing gRPC server log path...")
+
+		if (envLogPath) {
+			console.log(`[CONSOLE External GRPC] Environment variable GRPC_SERVER_DEBUG_LOG_PATH is set to: ${envLogPath}`)
+			determinedLogPath = envLogPath
 		} else {
-			console.warn(
-				"[CONSOLE External GRPC] context.storageUri.fsPath is not available or context.storageUri is null. Falling back to /tmp for logs.",
-			)
-			appendToGrpcLogFile(
-				"[CONSOLE External GRPC] context.storageUri.fsPath is not available or context.storageUri is null. Falling back to /tmp for logs.",
-			)
-			logDir = "/tmp" // Fallback directory
+			console.warn("[CONSOLE External GRPC] GRPC_SERVER_DEBUG_LOG_PATH not set. Falling back to default log path logic.")
+			let fallbackLogDir: string | null = null
+			const fallbackLogFilename = "grpc_server_debug.log"
+			if (context.storageUri && context.storageUri.fsPath) {
+				fallbackLogDir = context.storageUri.fsPath
+				console.log(`[CONSOLE External GRPC] Using fallback log directory from context.storageUri: ${fallbackLogDir}`)
+			} else {
+				console.warn(
+					"[CONSOLE External GRPC] context.storageUri.fsPath is not available. Using /tmp as fallback log directory.",
+				)
+				fallbackLogDir = "/tmp"
+			}
+			determinedLogPath = path.join(fallbackLogDir, fallbackLogFilename)
 		}
 
-		try {
-			if (!fs.existsSync(logDir)) {
-				console.log(`[CONSOLE External GRPC] Log directory ${logDir} does not exist. Creating...`)
-				appendToGrpcLogFile(`[CONSOLE External GRPC] Log directory ${logDir} does not exist. Creating...`)
-				fs.mkdirSync(logDir, { recursive: true })
-				console.log(`[CONSOLE External GRPC] Log directory ${logDir} created.`)
-				appendToGrpcLogFile(`[CONSOLE External GRPC] Log directory ${logDir} created.`)
+		if (determinedLogPath) {
+			try {
+				const logDirToEnsure = path.dirname(determinedLogPath)
+				if (!fs.existsSync(logDirToEnsure)) {
+					console.log(
+						`[CONSOLE External GRPC] Log directory ${logDirToEnsure} for path ${determinedLogPath} does not exist. Creating...`,
+					)
+					fs.mkdirSync(logDirToEnsure, { recursive: true })
+					console.log(`[CONSOLE External GRPC] Log directory ${logDirToEnsure} created.`)
+				}
+
+				// Check if the determined path is a directory (it shouldn't be)
+				if (fs.existsSync(determinedLogPath) && fs.statSync(determinedLogPath).isDirectory()) {
+					console.error(
+						`[CONSOLE External GRPC] ERROR: Log path ${determinedLogPath} exists and is a directory. Attempting to remove and recreate as file.`,
+					)
+					fs.rmSync(determinedLogPath, { recursive: true, force: true }) // Remove if it's a directory
+					fs.writeFileSync(determinedLogPath, "", "utf8") // Create as empty file
+					console.log(`[CONSOLE External GRPC] Log path ${determinedLogPath} recreated as an empty file.`)
+				}
+
+				grpcLogFilePath = determinedLogPath
+				const initMessage = `GRPC Server Log Initialized at ${new Date().toISOString()} (Log Path: ${grpcLogFilePath})\nUsing ${envLogPath ? "GRPC_SERVER_DEBUG_LOG_PATH" : "fallback path"}.\n`
+				fs.writeFileSync(grpcLogFilePath, initMessage, "utf8") // Create/overwrite with init message
+				console.log(`[CONSOLE External GRPC] Successfully initialized logging to file: ${grpcLogFilePath}`)
+			} catch (e: any) {
+				console.error(
+					`[CONSOLE External GRPC] Failed to initialize log file at ${determinedLogPath}: ${e.message}. File logging disabled.`,
+				)
+				grpcLogFilePath = null // Disable file logging if any setup step fails
 			}
-			grpcLogFilePath = path.join(logDir, logFilename)
-			const initMessage = `GRPC Server Log Initialized at ${new Date().toISOString()} (Log Path: ${grpcLogFilePath})\n`
-			fs.writeFileSync(grpcLogFilePath, initMessage, "utf8")
-			console.log(`[CONSOLE External GRPC] Logging to file: ${grpcLogFilePath}`)
-			// appendToGrpcLogFile is called by log() below, no need to call it directly here for this message
-		} catch (e: any) {
-			console.error(
-				`[CONSOLE External GRPC] Failed to initialize log file in ${logDir}: ${e.message}. File logging disabled.`,
-			)
-			// No appendToGrpcLogFile here as it might be the source of an error or grpcLogFilePath is null
-			grpcLogFilePath = null // Disable file logging if setup fails
+		} else {
+			console.error("[CONSOLE External GRPC] No log path could be determined. File logging disabled.")
+			grpcLogFilePath = null // Ensure it's null if no path was determined
 		}
 	}
 
@@ -182,10 +205,10 @@ export async function startExternalGrpcServer(
 		// --- Proto Loading Removed ---
 		// Static imports will be used instead.
 
-		server = new grpc.Server()
+		server = new grpc.Server({ "grpc.enable_channelz": 0 }) // Disable Channelz
 		grpcNotifier = new GrpcNotifier()
-		Logger.info("[External GRPC] gRPC server instance and notifier created.") // Use Logger.info
-		log("[CONSOLE External GRPC] gRPC server instance and notifier created.")
+		Logger.info("[External GRPC] gRPC server instance (Channelz disabled) and notifier created.") // Use Logger.info
+		log("[CONSOLE External GRPC] gRPC server instance (Channelz disabled) and notifier created.")
 
 		// --- Browser Service ---
 		// Assuming BrowserServiceService is the generated service definition from ts-proto

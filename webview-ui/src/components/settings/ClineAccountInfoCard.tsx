@@ -3,7 +3,7 @@ import { useFirebaseAuth } from "@/context/FirebaseAuthContext"
 import { vscode } from "@/utils/vscode"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AccountServiceClient } from "@/services/grpc-client"
-import { EmptyRequest } from "@shared/proto/common"
+import { EmptyRequest } from "@shared/proto_webview_types/common"
 
 export const ClineAccountInfoCard = () => {
 	const { user: firebaseUser, handleSignOut } = useFirebaseAuth()
@@ -12,7 +12,7 @@ export const ClineAccountInfoCard = () => {
 	let user = apiConfiguration?.clineApiKey ? firebaseUser || userInfo : undefined
 
 	const handleLogin = () => {
-		AccountServiceClient.accountLoginClicked(EmptyRequest.create()).catch((err) =>
+		AccountServiceClient.accountLoginClicked({ $type: "cline.EmptyRequest" }).catch((err) =>
 			console.error("Failed to get login URL:", err),
 		)
 	}

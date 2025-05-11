@@ -435,8 +435,6 @@ func runGrpcTest(conn *grpc.ClientConn) {
 		}
 		log.Printf("[gRPC-Info: GoClient:runGrpcTest] Proceeding with TaskID: %s (Version: %s)", receivedTaskID, receivedVersion)
 
-		/* --- COMMENTED OUT SendUserInput CALLS ---
-		log.Println("[gRPC-Info: GoClient:runGrpcTest] Skipping SendUserInput calls for this test.")
 		// --- Send Follow-up Messages using SendUserInput RPC ---
 		log.Printf("Sending follow-up message via SendUserInput RPC for TaskID %s...", receivedTaskID)
 		followUpMessage := "who was the us president in 2020?"
@@ -517,7 +515,6 @@ func runGrpcTest(conn *grpc.ClientConn) {
 				log.Println("[gRPC-Warn: GoClient:runGrpcTest] Received unexpected message on second SendUserInput stream. Expected EOF.")
 			}
 		} // End of 'if err == nil' for second SendUserInput
-		--- END COMMENTED OUT SendUserInput CALLS --- */
 
 		// --- Simplified Direct Receiving Loop (Standard For Loop) ---
 		log.Println("[gRPC-Info: GoClient:runGrpcTest] Entering standard 'for' loop to receive subsequent messages from StartTask stream...")

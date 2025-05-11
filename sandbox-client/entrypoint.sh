@@ -5,16 +5,31 @@ set -e
 
 # Define PIDs globally for cleanup
 VSCODE_SERVER_PID=""
+PUPPETEER_SCRIPT_PID=""
 GO_CLIENT_PID=""
 # ACTIVATION_KEEPER_PID="" # Activation keeper is disabled
 
 # Define log file paths
-LOG_DIR="/app/logs"
-VSCODE_LOG_FILE="${LOG_DIR}/vscode_server.log"
+LOG_DIR="/app/logs" # This directory should be volume-mounted from host e.g., ./run_logs:/app/logs
+OTHER_LOGS_SUBDIR="other_logs"
+VSCODE_LOG_FILE="${LOG_DIR}/${OTHER_LOGS_SUBDIR}/vscode_server.log"
+PUPPETEER_LOG_FILE="${LOG_DIR}/puppeteer_script.log" # For puppeteer_vscode_run.js stdout/stderr
+# Note: puppeteer_vscode_run.js itself creates /app/logs/browser_console.log and /app/logs/cline_extension.log
 GO_CLIENT_LOG_FILE="${LOG_DIR}/go_client.log"
 
-# Ensure log directory exists
+# Ensure log directories exist (Puppeteer script also does this, but good to have here too)
 mkdir -p ${LOG_DIR}
+mkdir -p "${LOG_DIR}/${OTHER_LOGS_SUBDIR}"
+
+# Define the specific gRPC debug log path within the container's /app/logs
+GRPC_SERVER_DEBUG_LOG_FILE_IN_APP_LOGS="${LOG_DIR}/grpc_server_debug.log"
+
+# Explicitly remove and recreate the gRPC debug log file to ensure it's a file and writable
+echo "Ensuring ${GRPC_SERVER_DEBUG_LOG_FILE_IN_APP_LOGS} is a writable file..."
+rm -rf "${GRPC_SERVER_DEBUG_LOG_FILE_IN_APP_LOGS}" # Remove if it exists (file or dir)
+touch "${GRPC_SERVER_DEBUG_LOG_FILE_IN_APP_LOGS}" # Create as an empty file
+chmod 666 "${GRPC_SERVER_DEBUG_LOG_FILE_IN_APP_LOGS}" # Make it writable for any user
+echo "${GRPC_SERVER_DEBUG_LOG_FILE_IN_APP_LOGS} ensured to be a file and writable."
 
 # Function to handle cleanup on exit
 cleanup() {
@@ -22,6 +37,10 @@ cleanup() {
     if [ -n "$VSCODE_SERVER_PID" ]; then
         echo "Stopping OpenVSCode Server (PID ${VSCODE_SERVER_PID})..."
         kill $VSCODE_SERVER_PID 2>/dev/null || true
+    fi
+    if [ -n "$PUPPETEER_SCRIPT_PID" ]; then
+        echo "Stopping Puppeteer Script (PID ${PUPPETEER_SCRIPT_PID})..."
+        kill $PUPPETEER_SCRIPT_PID 2>/dev/null || true
     fi
     if [ -n "$GO_CLIENT_PID" ]; then
         echo "Stopping Go Client (PID ${GO_CLIENT_PID})..."
@@ -36,6 +55,11 @@ cleanup() {
 
 # Set up trap for cleanup
 trap cleanup SIGTERM SIGINT
+
+# Set and export GRPC_SERVER_DEBUG_LOG_PATH to ensure the extension logs to the correct file.
+echo "Setting GRPC_SERVER_DEBUG_LOG_PATH to ${GRPC_SERVER_DEBUG_LOG_FILE_IN_APP_LOGS}..."
+export GRPC_SERVER_DEBUG_LOG_PATH="${GRPC_SERVER_DEBUG_LOG_FILE_IN_APP_LOGS}"
+echo "GRPC_SERVER_DEBUG_LOG_PATH set and exported."
 
 echo "Starting container with:"
 echo "- User ID: ${USER_ID}"
@@ -66,7 +90,7 @@ echo "Starting OpenVSCode Server on port ${VSCODE_INTERNAL_PORT}..."
   --extensions-dir /home/openvscode-server/.openvscode-server/extensions \
   --user-data-dir /home/openvscode-server/.openvscode-server/data \
   --without-connection-token \
-  --log=info \
+  --log=trace \
   --default-folder=/home/workspace \
   > "${VSCODE_LOG_FILE}" 2>&1 &
 VSCODE_SERVER_PID=$!
@@ -79,7 +103,42 @@ while ! nc -z localhost ${VSCODE_INTERNAL_PORT}; do
 done
 echo "OpenVSCode Server is listening on port ${VSCODE_INTERNAL_PORT}."
 
+# Start the Puppeteer script to open VSCode in browser and keep it running
+echo "Attempting to start Puppeteer script (/final-app/puppeteer_vscode_run.js) in background..."
+# Ensure PLAYWRIGHT_BROWSERS_PATH is set for Puppeteer script if it inherits env
+export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+
+# Start the script and capture its PID.
+# Log its output to PUPPETEER_LOG_FILE.
+node /final-app/puppeteer_vscode_run.js > "${PUPPETEER_LOG_FILE}" 2>&1 &
+PUPPETEER_SCRIPT_PID=$!
+
+# Brief pause to check if the script started successfully
+sleep 2
+if ps -p $PUPPETEER_SCRIPT_PID > /dev/null; then
+    echo "Puppeteer script started successfully with PID ${PUPPETEER_SCRIPT_PID}. Logs: ${PUPPETEER_LOG_FILE}"
+    echo "The Puppeteer script will also create browser_console.log and cline_extension.log in ${LOG_DIR}"
+else
+    echo "ERROR: Puppeteer script failed to start or exited immediately."
+    echo "--- Contents of ${PUPPETEER_LOG_FILE} (if any) after failed start: ---"
+    cat "${PUPPETEER_LOG_FILE}" || echo "Puppeteer log file empty or not found."
+    echo "--- End of Puppeteer log file ---"
+    # Decide if this is a fatal error for the entrypoint
+    # For now, let's continue, but this is a strong indicator of problems.
+    PUPPETEER_SCRIPT_PID="" # Unset PID if it failed
+fi
+
+# Add a delay to allow Puppeteer to launch the browser and VSCode to initialize
+# Only wait if Puppeteer script is presumed running
+if [ -n "$PUPPETEER_SCRIPT_PID" ]; then
+    echo "Waiting 15 seconds for Puppeteer to launch browser and VSCode to initialize..."
+    sleep 15
+else
+    echo "Skipping 15s wait as Puppeteer script did not start correctly."
+fi
+
 # Wait for the CONTAINER's gRPC server port to be available
+# This port is made available by the Cline extension running inside the VSCode instance opened by Puppeteer
 GRPC_HOST="localhost" # Target is now localhost within the container
 GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Use port from env var or default
 WAIT_TIMEOUT=120 # Increased timeout to 120 seconds
@@ -177,9 +236,10 @@ GO_CLIENT_PID=$! # This will be the PID of the backgrounded Go client
 echo "Go client started in background with PID ${GO_CLIENT_PID}, logs will go to ${GO_CLIENT_LOG_FILE}"
 
 # Keep the container running by waiting for the primary VS Code server process
-echo "Container setup complete. Monitoring background processes (VSCode Server: ${VSCODE_SERVER_PID}, Go Client: ${GO_CLIENT_PID}). Logs are in ${LOG_DIR}/"
+echo "Container setup complete. Monitoring background processes (VSCode Server: ${VSCODE_SERVER_PID}, Puppeteer: ${PUPPETEER_SCRIPT_PID}, Go Client: ${GO_CLIENT_PID}). Logs are in ${LOG_DIR}/"
 # Wait specifically for the VS Code server process to exit.
 # This will keep the script running in the foreground until VSCode Server stops.
+# The Puppeteer script and Go client are backgrounded and will be cleaned up by the trap.
 wait $VSCODE_SERVER_PID
 EXIT_CODE=$?
 echo "VSCode Server process (PID ${VSCODE_SERVER_PID}) exited with code ${EXIT_CODE}. Initiating shutdown..."

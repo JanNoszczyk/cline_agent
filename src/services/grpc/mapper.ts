@@ -161,8 +161,8 @@ export function mapHistoryItemToProto(item: InternalHistoryItem): Partial<ProtoH
 	const protoTs = dateToProtoTimestamp(item.ts)
 	return {
 		id: item.id, // Required in Partial as well if truly required by proto
-		// Return number | undefined for timestamp
-		ts: protoTs ? protoTs.toDate().getTime() : undefined,
+		// Ensure ts defaults to 0 if undefined, as it's a required int64
+		ts: protoTs ? protoTs.toDate().getTime() : 0,
 		task: item.task, // Required in Partial as well if truly required by proto
 		tokensIn: item.tokensIn ?? 0,
 		tokensOut: item.tokensOut ?? 0,
@@ -295,8 +295,8 @@ export function mapAutoApprovalSettingsToProto(settings: InternalAutoApprovalSet
 	return {
 		version: settings.version, // Required in Partial as well
 		enabled: settings.enabled, // Required in Partial as well
-		// Re-add cast for actions
-		actions: mapAutoApprovalActionsToProto(settings.actions) as ProtoAutoApprovalActions | undefined,
+		// Ensure actions is an object, as it's a required message field in proto
+		actions: (mapAutoApprovalActionsToProto(settings.actions) as ProtoAutoApprovalActions) ?? {},
 		maxRequests: settings.maxRequests ?? undefined,
 		enableNotifications: settings.enableNotifications ?? undefined,
 	}

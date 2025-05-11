@@ -120,11 +120,11 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     bash curl wget gnupg sudo procps chromium-browser netcat-traditional unzip dos2unix \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - \
     && sudo apt-get install -y nodejs \
-    && sudo npm install -g n \
-    && sudo n 22 \
-    && npx playwright install-deps \
-    && sudo npm install -g --unsafe-perm=true playwright \
-    && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/*
+           && sudo npm install -g n \
+           && sudo n 22 \
+           && npx playwright install-deps \
+           && sudo npm install -g --unsafe-perm=true playwright \
+           && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/*
 
 # Create and set permissions for Playwright browser directory
 RUN sudo mkdir -p /opt/pw-browsers && sudo chown -R openvscode-server:openvscode-server /opt/pw-browsers
@@ -157,11 +157,22 @@ ENV OPENVSCODE_SERVER_EXTENSIONS_DIR=/home/openvscode-server/.openvscode-server/
 COPY --from=builder --chown=openvscode-server:openvscode-server /sandbox-binary /final-app/sandbox-binary
 RUN sudo chmod +x /final-app/sandbox-binary
 
-    # Copy entrypoint script and vsix file
-    COPY --chown=openvscode-server:openvscode-server --chmod=755 sandbox-client/entrypoint.sh /final-app/entrypoint.sh
-        RUN mkdir -p /tmp/
-        # Copy VSIX from the build context root (project root)
-    COPY sandbox-client/cline-extension.vsix /tmp/claude-dev.vsix
+           # Copy entrypoint script, Puppeteer script, and vsix file
+           COPY --chown=openvscode-server:openvscode-server --chmod=755 sandbox-client/entrypoint.sh /final-app/entrypoint.sh
+           COPY --chown=openvscode-server:openvscode-server --chmod=755 sandbox-client/puppeteer_vscode_run.js /final-app/puppeteer_vscode_run.js
+
+       # Install Playwright locally for puppeteer_vscode_run.js
+       # This ensures the script can find Playwright regardless of global paths.
+       # The WORKDIR is /final-app, set earlier.
+       RUN sudo npm install playwright && \
+           sudo chown -R openvscode-server:openvscode-server /final-app/node_modules && \
+           # If npm creates a package-lock.json or package.json, ensure they are also owned correctly
+           (test -f /final-app/package-lock.json && sudo chown openvscode-server:openvscode-server /final-app/package-lock.json || true) && \
+           (test -f /final-app/package.json && sudo chown openvscode-server:openvscode-server /final-app/package.json || true)
+
+               RUN mkdir -p /tmp/
+               # Copy VSIX from the build context root (project root)
+           COPY sandbox-client/cline-extension.vsix /tmp/claude-dev.vsix
 
     # Set up VS Code settings with gRPC port
 ARG CLINE_GRPC_PORT_ARG=50051

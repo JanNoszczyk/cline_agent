@@ -9,7 +9,7 @@ import CreditsHistoryTable from "./CreditsHistoryTable"
 import { UsageTransaction, PaymentTransaction } from "@shared/ClineAccount"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AccountServiceClient } from "@/services/grpc-client"
-import { EmptyRequest } from "@shared/proto/common"
+import { EmptyRequest } from "@shared/proto_webview_types/common"
 
 type AccountViewProps = {
 	onDone: () => void
@@ -70,7 +70,7 @@ export const ClineAccountView = () => {
 	}, [user])
 
 	const handleLogin = () => {
-		AccountServiceClient.accountLoginClicked(EmptyRequest.create()).catch((err) =>
+		AccountServiceClient.accountLoginClicked({ $type: "cline.EmptyRequest" }).catch((err) =>
 			console.error("Failed to get login URL:", err),
 		)
 	}

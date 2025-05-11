@@ -1,6 +1,6 @@
 import { mentionRegex } from "@shared/context-mentions"
 import { Fzf } from "fzf"
-import * as path from "path"
+// Do not import 'path' module in webview code
 
 export interface SearchResult {
 	path: string
@@ -190,10 +190,12 @@ export function getContextMenuOptions(
 
 	const searchResultItems = dynamicSearchResults.map((result) => {
 		const formattedPath = result.path.startsWith("/") ? result.path : `/${result.path}`
+		// Browser-compatible basename
+		const basename = (p: string) => p.substring(p.lastIndexOf("/") + 1)
 		const item = {
 			type: result.type === "folder" ? ContextMenuOptionType.Folder : ContextMenuOptionType.File,
 			value: formattedPath,
-			label: result.label || path.basename(result.path),
+			label: result.label || basename(result.path),
 			description: formattedPath,
 		}
 		return item
