@@ -30,6 +30,7 @@ var allReceivedMessages []*tpb.ExtensionMessage
 
 // logMessageSummary prints a summary of all collected ExtensionMessages.
 func logMessageSummary(messages []*tpb.ExtensionMessage) {
+	log.Println("[DEBUG] Entering logMessageSummary function...")
 	log.Println("--- Summary of All Received Messages on StartTask Stream ---")
 	if len(messages) == 0 {
 		log.Println("No messages were received on the StartTask stream.")
@@ -38,73 +39,237 @@ func logMessageSummary(messages []*tpb.ExtensionMessage) {
 	}
 	for i, msg := range messages {
 		taskIDStr := "N/A"
-		if msg.GetTaskStarted() != nil {
-			taskIDStr = msg.GetTaskStarted().GetTaskId()
+		if ts := msg.GetTaskStarted(); ts != nil {
+			taskIDStr = ts.GetTaskId()
 		}
 		log.Printf("Message %d/%d: Type=%s, TaskID (from TaskStarted payload if applicable)=%s", i+1, len(messages), msg.GetType(), taskIDStr)
 
 		// Handle direct fields first
-		if msg.GetTaskStarted() != nil {
-			tsPayload := msg.GetTaskStarted()
+		if tsPayload := msg.GetTaskStarted(); tsPayload != nil {
 			log.Printf("  Direct Field: TASK_STARTED - TaskID: %s, Version: %s", tsPayload.GetTaskId(), tsPayload.GetVersion())
 		}
-		if msg.GetGenericText() != "" {
-			log.Printf("  Direct Field: GenericText: %s", msg.GetGenericText())
+		if gt := msg.GetGenericText(); gt != "" {
+			log.Printf("  Direct Field: GenericText: %s", gt)
 		}
-		if msg.GetErrorMessage() != "" {
-			log.Printf("  Direct Field: ErrorMessage: %s", msg.GetErrorMessage())
+		if errMsg := msg.GetErrorMessage(); errMsg != "" {
+			log.Printf("  Direct Field: ErrorMessage: %s", errMsg)
 		}
 
 		// Handle oneof payload
 		switch payload := msg.Payload.(type) {
 		case *tpb.ExtensionMessage_State:
 			if payload.State != nil {
-				log.Printf("  Payload: STATE - Version: %s, CurrentTaskID: %s, Mode: %s", payload.State.GetVersion(), payload.State.GetCurrentTaskItem().GetId(), payload.State.GetChatSettings().GetMode())
+				s := payload.State
+				log.Printf("  Payload: STATE")
+				log.Printf("    Version: %s", s.GetVersion())
+				log.Printf("    Platform: %s", s.GetPlatform())
+				log.Printf("    TelemetrySetting: %s", s.GetTelemetrySetting())
+				log.Printf("    VscMachineId: %s", s.GetVscMachineId())
+				log.Printf("    PlanActSeparateModelsSetting: %t", s.GetPlanActSeparateModelsSetting())
+				log.Printf("    ShouldShowAnnouncement: %t", s.GetShouldShowAnnouncement())
+				log.Printf("    UriScheme: %s", s.GetUriScheme())
+				log.Printf("    CheckpointTrackerErrorMessage: %s", s.GetCheckpointTrackerErrorMessage())
+				log.Printf("    McpMarketplaceEnabled: %t", s.GetMcpMarketplaceEnabled())
+				log.Printf("    RemoteBrowserHost: %s", s.GetRemoteBrowserHost())
+				log.Printf("    CustomInstructions: %s", s.GetCustomInstructions())
+
+				if ac := s.GetApiConfiguration(); ac != nil {
+					log.Printf("    ApiConfiguration:")
+					log.Printf("      ApiProvider: %s", ac.GetApiProvider())
+					log.Printf("      ApiModelId: %s", ac.GetApiModelId())
+					log.Printf("      ApiKey (present): %t", ac.ApiKey != nil)
+					log.Printf("      FavoritedModelIds: %v", ac.GetFavoritedModelIds())
+				}
+				if aas := s.GetAutoApprovalSettings(); aas != nil {
+					log.Printf("    AutoApprovalSettings:")
+					log.Printf("      Version: %d", aas.GetVersion())
+					log.Printf("      Enabled: %t", aas.GetEnabled())
+					if aaActions := aas.GetActions(); aaActions != nil {
+						log.Printf("        Actions: ReadFiles=%t, EditFiles=%t, UseBrowser=%t, UseMcp=%t", aaActions.GetReadFiles(), aaActions.GetEditFiles(), aaActions.GetUseBrowser(), aaActions.GetUseMcp())
+					}
+					log.Printf("      MaxRequests: %d", aas.GetMaxRequests())
+					log.Printf("      EnableNotifications: %t", aas.GetEnableNotifications())
+				}
+				if bs := s.GetBrowserSettings(); bs != nil {
+					log.Printf("    BrowserSettings:")
+					if vp := bs.GetViewport(); vp != nil {
+						log.Printf("      Viewport: Width=%d, Height=%d", vp.GetWidth(), vp.GetHeight())
+					}
+					log.Printf("      RemoteBrowserHost (in BrowserSettings): %s", bs.GetRemoteBrowserHost())
+					log.Printf("      RemoteBrowserEnabled: %t", bs.GetRemoteBrowserEnabled())
+				}
+				if cs := s.GetChatSettings(); cs != nil {
+					log.Printf("    ChatSettings: Mode=%s", cs.GetMode())
+				}
+				if ui := s.GetUserInfo(); ui != nil {
+					log.Printf("    UserInfo: DisplayName=%s, Email=%s, PhotoUrl (present)=%t", ui.GetDisplayName(), ui.GetEmail(), ui.GetPhotoUrl() != "")
+				}
+				if ct := s.GetCurrentTaskItem(); ct != nil {
+					log.Printf("    CurrentTaskItem: ID=%s, Task=%s, TS=%d", ct.GetId(), ct.GetTask(), ct.GetTs())
+				}
+				log.Printf("    TaskHistory Count: %d", len(s.GetTaskHistory()))
+				// Optionally log details of each history item if needed
+				log.Printf("    GlobalClineRulesToggles Count: %d", len(s.GetGlobalClineRulesToggles().GetToggles()))
+				log.Printf("    LocalClineRulesToggles Count: %d", len(s.GetLocalClineRulesToggles().GetToggles()))
+				log.Printf("    ClineMessages in State Count: %d", len(s.GetClineMessages()))
 			}
-		case *tpb.ExtensionMessage_PartialMessage: // This is a ClineMessage
+		case *tpb.ExtensionMessage_PartialMessage:
 			if payload.PartialMessage != nil {
 				cm := payload.PartialMessage
-				log.Printf("  Payload: PARTIAL_MESSAGE (ClineMessage) - TypeInCline: %s, IsPartial: %t, Text (len %d): %s",
-					cm.GetType(), // This is ClineMessage.Type (ASK/SAY)
-					cm.GetPartial(),
-					len(cm.GetText()),
-					cm.GetText())
-				// Further breakdown of ClineMessage's oneof ask_payload or say_payload can be added here if needed
-				if cm.GetAskType() != tpb.ClineAskType_CLINE_ASK_TYPE_UNSPECIFIED {
-					log.Printf("    ClineMessage AskType: %s", cm.GetAskType())
+				log.Printf("  Payload: PARTIAL_MESSAGE (ClineMessage)")
+				log.Printf("    TS: %d", cm.GetTs())
+				log.Printf("    TypeInCline: %s", cm.GetType()) // "ask" or "say"
+				log.Printf("    Text (raw): %s", cm.GetText())
+				log.Printf("    Reasoning: %s", cm.GetReasoning())
+				log.Printf("    Images Count: %d", len(cm.GetImages()))
+				log.Printf("    Partial: %t", cm.GetPartial())
+				log.Printf("    LastCheckpointHash: %s", cm.GetLastCheckpointHash())
+				log.Printf("    IsCheckpointCheckedOut: %t", cm.GetIsCheckpointCheckedOut())
+				log.Printf("    IsOperationOutsideWorkspace: %t", cm.GetIsOperationOutsideWorkspace())
+				log.Printf("    ConversationHistoryIndex: %d", cm.GetConversationHistoryIndex())
+				if cdr := cm.GetConversationHistoryDeletedRange(); cdr != nil {
+					log.Printf("    ConversationHistoryDeletedRange: Start=%d, End=%d", cdr.GetStartIndex(), cdr.GetEndIndex())
 				}
-				if cm.GetSayType() != tpb.ClineSayType_CLINE_SAY_TYPE_UNSPECIFIED {
-					log.Printf("    ClineMessage SayType: %s", cm.GetSayType())
+
+				// Log Ask Payload
+				if askP := cm.GetAskPayload(); askP != nil {
+					log.Printf("    AskType (Enum): %s", cm.GetAskType())
+					switch askCase := askP.(type) {
+					case *tpb.ClineMessage_AskFollowupPayload:
+						p := askCase.AskFollowupPayload
+						log.Printf("      AskFollowupPayload: Question='%s', Options=%v, Selected='%s'", p.GetQuestion(), p.GetOptions(), p.GetSelected())
+					case *tpb.ClineMessage_AskPlanModeRespondPayload:
+						p := askCase.AskPlanModeRespondPayload
+						log.Printf("      AskPlanModeRespondPayload: Response='%s', Options=%v, Selected='%s'", p.GetResponse(), p.GetOptions(), p.GetSelected())
+					case *tpb.ClineMessage_AskCommandPayload:
+						log.Printf("      AskCommandPayload: CommandText='%s'", askCase.AskCommandPayload.GetCommandText())
+					case *tpb.ClineMessage_AskCommandOutputPayload:
+						log.Printf("      AskCommandOutputPayload: OutputText='%s'", askCase.AskCommandOutputPayload.GetOutputText())
+					case *tpb.ClineMessage_AskCompletionResultPayload:
+						log.Printf("      AskCompletionResultPayload: ResultText='%s'", askCase.AskCompletionResultPayload.GetResultText())
+					case *tpb.ClineMessage_AskToolPayload:
+						if td := askCase.AskToolPayload.GetToolDetails(); td != nil {
+							log.Printf("      AskToolPayload: Tool=%s, Path='%s', Diff (present)=%t, Content (present)=%t, Regex='%s', FilePattern='%s'",
+								td.GetTool(), td.GetPath(), td.GetDiff() != "", td.GetContent() != "", td.GetRegex(), td.GetFilePattern())
+						}
+					case *tpb.ClineMessage_AskApiReqFailedPayload:
+						log.Printf("      AskApiReqFailedPayload: ErrorMessage='%s'", askCase.AskApiReqFailedPayload.GetErrorMessage())
+					case *tpb.ClineMessage_AskResumeTaskPayload:
+						log.Printf("      AskResumeTaskPayload: TaskId='%s'", askCase.AskResumeTaskPayload.GetTaskId())
+					case *tpb.ClineMessage_AskResumeCompletedTaskPayload:
+						log.Printf("      AskResumeCompletedTaskPayload: TaskId='%s'", askCase.AskResumeCompletedTaskPayload.GetTaskId())
+					case *tpb.ClineMessage_AskMistakeLimitReachedPayload:
+						log.Printf("      AskMistakeLimitReachedPayload: (no fields)")
+					case *tpb.ClineMessage_AskAutoApprovalMaxReqReachedPayload:
+						log.Printf("      AskAutoApprovalMaxReqReachedPayload: (no fields)")
+					case *tpb.ClineMessage_AskBrowserActionLaunchPayload:
+						log.Printf("      AskBrowserActionLaunchPayload: Url='%s'", askCase.AskBrowserActionLaunchPayload.GetUrl())
+					case *tpb.ClineMessage_AskUseMcpServerPayload:
+						p := askCase.AskUseMcpServerPayload
+						log.Printf("      AskUseMcpServerPayload: ServerName='%s', Type=%s, ToolName='%s', ArgsJson (present)=%t, Uri='%s'",
+							p.GetServerName(), p.GetType(), p.GetToolName(), p.GetArgumentsJson() != "", p.GetUri())
+					case *tpb.ClineMessage_AskNewTaskPayload:
+						log.Printf("      AskNewTaskPayload: Context (len %d)", len(askCase.AskNewTaskPayload.GetContext()))
+					default:
+						log.Printf("      Unhandled AskPayload case: %T", askCase)
+					}
+				}
+
+				// Log Say Payload
+				if sayP := cm.GetSayPayload(); sayP != nil {
+					log.Printf("    SayType (Enum): %s", cm.GetSayType())
+					switch sayCase := sayP.(type) {
+					case *tpb.ClineMessage_SayTaskPayload:
+						log.Printf("      SayTaskPayload: TaskDescription='%s'", sayCase.SayTaskPayload.GetTaskDescription())
+					case *tpb.ClineMessage_SayErrorPayload:
+						log.Printf("      SayErrorPayload: ErrorMessage='%s'", sayCase.SayErrorPayload.GetErrorMessage())
+					case *tpb.ClineMessage_SayApiReqInfoPayload:
+						p := sayCase.SayApiReqInfoPayload
+						log.Printf("      SayApiReqInfoPayload: Request (present)=%t, TokensIn=%d, TokensOut=%d, CacheWrites=%d, CacheReads=%d, Cost=%.4f, CancelReason=%s",
+							p.GetRequest() != "", p.GetTokensIn(), p.GetTokensOut(), p.GetCacheWrites(), p.GetCacheReads(), p.GetCost(), p.GetCancelReason())
+					case *tpb.ClineMessage_SayTextPayload:
+						log.Printf("      SayTextPayload: TextContent='%s'", sayCase.SayTextPayload.GetTextContent())
+					case *tpb.ClineMessage_SayReasoningPayload:
+						log.Printf("      SayReasoningPayload: ReasoningText='%s'", sayCase.SayReasoningPayload.GetReasoningText())
+					case *tpb.ClineMessage_SayCompletionResultPayload:
+						p := sayCase.SayCompletionResultPayload
+						log.Printf("      SayCompletionResultPayload: ResultText='%s', HasChanges=%t", p.GetResultText(), p.GetHasChanges())
+					case *tpb.ClineMessage_SayUserFeedbackPayload:
+						log.Printf("      SayUserFeedbackPayload: FeedbackText='%s'", sayCase.SayUserFeedbackPayload.GetFeedbackText())
+					case *tpb.ClineMessage_SayUserFeedbackDiffPayload:
+						log.Printf("      SayUserFeedbackDiffPayload: DiffContent (len %d)", len(sayCase.SayUserFeedbackDiffPayload.GetDiffContent()))
+					case *tpb.ClineMessage_SayCommandPayload:
+						log.Printf("      SayCommandPayload: CommandText='%s'", sayCase.SayCommandPayload.GetCommandText())
+					case *tpb.ClineMessage_SayCommandOutputPayload:
+						log.Printf("      SayCommandOutputPayload: OutputText='%s'", sayCase.SayCommandOutputPayload.GetOutputText())
+					case *tpb.ClineMessage_SayToolPayload:
+						p := sayCase.SayToolPayload
+						log.Printf("      SayToolPayload: Tool=%s, Path='%s', Diff (present)=%t, Content (present)=%t, Regex='%s', FilePattern='%s', OpInWorkspace=%t",
+							p.GetTool(), p.GetPath(), p.GetDiff() != "", p.GetContent() != "", p.GetRegex(), p.GetFilePattern(), p.GetOperationIsLocatedInWorkspace())
+					case *tpb.ClineMessage_SayShellIntegrationWarningPayload:
+						log.Printf("      SayShellIntegrationWarningPayload: WarningMessage='%s'", sayCase.SayShellIntegrationWarningPayload.GetWarningMessage())
+					case *tpb.ClineMessage_SayBrowserActionLaunchPayload:
+						log.Printf("      SayBrowserActionLaunchPayload: Url='%s'", sayCase.SayBrowserActionLaunchPayload.GetUrl())
+					case *tpb.ClineMessage_SayBrowserActionPayload:
+						p := sayCase.SayBrowserActionPayload
+						log.Printf("      SayBrowserActionPayload: Action=%s, Coordinate='%s', Text='%s'", p.GetAction(), p.GetCoordinate(), p.GetText())
+					case *tpb.ClineMessage_SayBrowserActionResultPayload:
+						p := sayCase.SayBrowserActionResultPayload
+						log.Printf("      SayBrowserActionResultPayload: Screenshot (present)=%t, Logs (present)=%t, CurrentUrl='%s', CurrentMousePosition='%s'",
+							p.GetScreenshot() != "", p.GetLogs() != "", p.GetCurrentUrl(), p.GetCurrentMousePosition())
+					case *tpb.ClineMessage_SayMcpServerRequestStartedPayload:
+						log.Printf("      SayMcpServerRequestStartedPayload: ServerName='%s'", sayCase.SayMcpServerRequestStartedPayload.GetServerName())
+					case *tpb.ClineMessage_SayMcpServerResponsePayload:
+						p := sayCase.SayMcpServerResponsePayload
+						log.Printf("      SayMcpServerResponsePayload: ServerName='%s', ResponseContent (len %d)", p.GetServerName(), len(p.GetResponseContent()))
+					case *tpb.ClineMessage_SayUseMcpServerPayload:
+						if d := sayCase.SayUseMcpServerPayload.GetDetails(); d != nil {
+							log.Printf("      SayUseMcpServerPayload: ServerName='%s', Type=%s, ToolName='%s', ArgsJson (present)=%t, Uri='%s'",
+								d.GetServerName(), d.GetType(), d.GetToolName(), d.GetArgumentsJson() != "", d.GetUri())
+						}
+					case *tpb.ClineMessage_SayDiffErrorPayload:
+						p := sayCase.SayDiffErrorPayload
+						log.Printf("      SayDiffErrorPayload: ErrorMessage='%s', Path='%s'", p.GetErrorMessage(), p.GetPath())
+					case *tpb.ClineMessage_SayDeletedApiReqsPayload:
+						log.Printf("      SayDeletedApiReqsPayload: Count=%d", sayCase.SayDeletedApiReqsPayload.GetCount())
+					case *tpb.ClineMessage_SayClineignoreErrorPayload:
+						log.Printf("      SayClineignoreErrorPayload: ErrorMessage='%s'", sayCase.SayClineignoreErrorPayload.GetErrorMessage())
+					case *tpb.ClineMessage_SayCheckpointCreatedPayload:
+						log.Printf("      SayCheckpointCreatedPayload: CheckpointHash='%s'", sayCase.SayCheckpointCreatedPayload.GetCheckpointHash())
+					case *tpb.ClineMessage_SayLoadMcpDocumentationPayload:
+						log.Printf("      SayLoadMcpDocumentationPayload: (no fields)")
+					default:
+						log.Printf("      Unhandled SayPayload case: %T", sayCase)
+					}
 				}
 			}
 		case *tpb.ExtensionMessage_TextMessage: // This is also a ClineMessage
 			if payload.TextMessage != nil {
 				cm := payload.TextMessage
+				// Similar detailed logging as for PartialMessage can be added here if needed
 				log.Printf("  Payload: TEXT_MESSAGE (ClineMessage) - TypeInCline: %s, IsPartial: %t, Text (len %d): %s",
-					cm.GetType(),
-					cm.GetPartial(),
-					len(cm.GetText()),
-					cm.GetText())
+					cm.GetType(), cm.GetPartial(), len(cm.GetText()), cm.GetText())
 			}
 		case *tpb.ExtensionMessage_ToolUse:
 			if payload.ToolUse != nil {
-				log.Printf("  Payload: TOOL_USE - ToolUseID: %s, Name: %s, Input: %v", payload.ToolUse.GetToolUseId(), payload.ToolUse.GetName(), payload.ToolUse.GetInput())
+				tu := payload.ToolUse
+				log.Printf("  Payload: TOOL_USE - ToolUseID: %s, Name: %s, Input: %v", tu.GetToolUseId(), tu.GetName(), tu.GetInput())
 			}
 		case *tpb.ExtensionMessage_ToolResult:
 			if payload.ToolResult != nil {
+				tr := payload.ToolResult
 				contentStr := ""
-				if tc := payload.ToolResult.GetTextContent(); tc != "" {
+				if tc := tr.GetTextContent(); tc != "" {
 					contentStr = "Text: " + tc
-				} else if jc := payload.ToolResult.GetJsonContent(); jc != nil {
-					contentStr = "JSON: " + jc.String()
+				} else if jc := tr.GetJsonContent(); jc != nil {
+					contentStr = "JSON: " + jc.String() // Assuming jc is a structpb.Value
 				}
-				log.Printf("  Payload: TOOL_RESULT - ToolUseID: %s, IsError: %t, Content: %s", payload.ToolResult.GetToolUseId(), payload.ToolResult.GetIsError(), contentStr)
+				log.Printf("  Payload: TOOL_RESULT - ToolUseID: %s, IsError: %t, Content: %s", tr.GetToolUseId(), tr.GetIsError(), contentStr)
 			}
-		// Add cases for other oneof fields from ExtensionMessage as needed for detailed logging
-		// Example for a wrapper type:
 		case *tpb.ExtensionMessage_McpServers:
 			if payload.McpServers != nil && payload.McpServers.GetServers() != nil {
 				log.Printf("  Payload: MCP_SERVERS - Count: %d", len(payload.McpServers.GetServers()))
+				// Optionally log details of each McpServer
 			}
 		default:
 			log.Printf("  Payload: Other or Unhandled Oneof Type (%T) or nil", payload)
@@ -120,12 +285,19 @@ const (
 )
 
 var anthropicApiKey string // Will be loaded from environment variable
+var openAiApiKey string    // Placeholder for OpenAI key
 
 func init() {
 	// Load Anthropic API Key from environment variable
 	anthropicApiKey = os.Getenv("ANTHROPIC_API_KEY")
 	if anthropicApiKey == "" {
-		log.Fatalln("Error: ANTHROPIC_API_KEY environment variable not set. This is required for tests.")
+		log.Println("Warning: ANTHROPIC_API_KEY environment variable not set. Some tests might rely on it.")
+	}
+	// For OpenAI, we can use a placeholder or the same key if the test doesn't actually hit the API
+	openAiApiKey = os.Getenv("OPENAI_API_KEY")
+	if openAiApiKey == "" {
+		log.Println("Warning: OPENAI_API_KEY environment variable not set. Using placeholder for OpenAI tests.")
+		openAiApiKey = "sk-placeholder-openai-key" // Or use anthropicApiKey as a placeholder
 	}
 }
 
@@ -166,14 +338,23 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 	// --- Test 0: Update API Settings via gRPC ---
 	log.Println("[gRPC-Debug: GoClient:runGrpcTest] Preparing UpdateSettings request...")
-	// <<< Create pointer for optional enum field
-	apiProvider := tpb.ApiProvider_ANTHROPIC
-	settingsReq := &tpb.UpdateSettingsRequest{ // <<< Use tpb alias
-		ApiConfiguration: &tpb.ApiConfiguration{ // <<< Use tpb alias
-			ApiProvider: &apiProvider, // <<< Pass pointer to enum value
-			ApiModelId:  stringPtr("claude-3-7-sonnet-20250219"),
-			ApiKey:      stringPtr(anthropicApiKey), // <<< Correct field name is ApiKey
+	apiProviderOpenAI := tpb.ApiProvider_OPENAI // Change provider
+	chatModePlan := tpb.ChatMode_PLAN
+	settingsReq := &tpb.UpdateSettingsRequest{
+		ApiConfiguration: &tpb.ApiConfiguration{
+			ApiProvider: &apiProviderOpenAI,
+			ApiModelId:  stringPtr("gpt-4-turbo-preview"), // Example OpenAI model
+			ApiKey:      stringPtr(openAiApiKey),          // Use placeholder or actual key
+			// Add more ApiConfiguration fields if needed for testing
+			FavoritedModelIds: []string{"gpt-4-turbo-preview", "claude-3-opus-20240229"},
 		},
+		ChatSettings: &tpb.ChatSettings{ // Add ChatSettings
+			Mode: chatModePlan,
+		},
+		// SettingsUpdate struct can be added here if specific fields are to be tested via it
+		// SettingsUpdate: &structpb.Struct{Fields: map[string]*structpb.Value{
+		// 	"someOtherSetting": structpb.NewBoolValue(true),
+		// }},
 	}
 	log.Printf("[gRPC-Debug: GoClient:runGrpcTest] Calling taskControlClient.UpdateSettings...")
 	settingsStream, err := taskControlClient.UpdateSettings(ctxWithMetadata, settingsReq)
@@ -358,9 +539,11 @@ func runGrpcTest(conn *grpc.ClientConn) {
 	// --- Test 4: Start Task and Send/Receive Messages ---
 	log.Println("[gRPC-Debug: GoClient:runGrpcTest] Preparing initial NewTask message...")
 	initialMessage := "whats 2+2"
-	startTaskReqPayload := &tpb.NewTaskRequest{ // <<< Use tpb alias
+	startTaskReqPayload := &tpb.NewTaskRequest{
 		Text: stringPtr(initialMessage),
-		// ChatContent can be omitted
+		ChatContent: &tpb.ChatContent{ // Add ChatContent with an image
+			Images: []string{"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="}, // Placeholder base64 image
+		},
 	}
 	// ClientMessage is no longer used directly for StartTask, pass NewTaskRequest directly
 
@@ -518,13 +701,14 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 		// --- Simplified Direct Receiving Loop (Standard For Loop) ---
 		log.Println("[gRPC-Info: GoClient:runGrpcTest] Entering standard 'for' loop to receive subsequent messages from StartTask stream...")
+	receiveLoop: // Label for the loop
 		for {
 			// Check if the overall context is done before blocking on Recv()
 			// This helps exit faster if the main timeout fires while Recv() is blocked.
 			select {
 			case <-baseCtx.Done():
 				log.Printf("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] Overall test context done before Recv(): %v", baseCtx.Err())
-				goto endLoop // Use goto to break out of the outer for loop
+				break receiveLoop // Use break with label to exit the outer for loop
 			default:
 				// Proceed with Recv()
 			}
@@ -542,14 +726,12 @@ func runGrpcTest(conn *grpc.ClientConn) {
 					if ok {
 						// It's a gRPC error
 						log.Printf("[gRPC-Error: GoClient:runGrpcTest:ForRecvLoop] Error receiving from StartTask stream. Code: %s, Message: %s", s.Code(), s.Message())
-						// Optionally, add specific handling or logging for DeadlineExceeded if needed, though it's now covered by the general gRPC error logging.
-						// For example: if s.Code() == codes.DeadlineExceeded { log.Println("[gRPC-Detail: GoClient:runGrpcTest:ForRecvLoop] This was a context deadline exceeded error.") }
 					} else {
 						// Not a gRPC error (e.g., network issue before gRPC status is formed, or other client-side issue)
 						log.Printf("[gRPC-Error: GoClient:runGrpcTest:ForRecvLoop] Non-gRPC error receiving from StartTask stream: %v", err)
 					}
 				}
-				break // Exit loop on any error (including EOF)
+				break receiveLoop // Exit loop on any error (including EOF)
 			}
 
 			// Process the received message
@@ -559,10 +741,10 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 				// --- Check for Task Completion Message ---
 				if resp.GetType() == tpb.ExtensionMessageType_PARTIAL_MESSAGE {
-					clineMsg := resp.GetPartialMessage()
+					clineMsg := resp.GetPartialMessage() // clineMsg is *tpb.ClineMessage
 					if clineMsg != nil && !clineMsg.GetPartial() && clineMsg.GetSayType() == tpb.ClineSayType_SAY_COMPLETION_RESULT {
 						log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received final completion message (PARTIAL_MESSAGE, partial=false, say_type=SAY_COMPLETION_RESULT). Breaking loop.")
-						break // Exit loop gracefully on completion message
+						break receiveLoop // Exit loop gracefully on completion message
 					}
 				}
 				// --- End Task Completion Check ---
@@ -574,7 +756,7 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 			// Loop continues if no error and not the completion message
 		}
-	endLoop: // Label for goto statement
+		// endLoop: // Label for goto statement - no longer needed with labeled break
 		log.Println("[gRPC-Info: GoClient:runGrpcTest] Exited 'for' receiving loop.")
 
 	} else {

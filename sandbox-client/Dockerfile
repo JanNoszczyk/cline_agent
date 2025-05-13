@@ -97,6 +97,8 @@ RUN go mod tidy -v
 RUN go get -v ./...
 # Verify package listing *after* tidy and get
 RUN echo "--- Listing Go packages found (after tidy and get) ---" && go list ./... && echo "--- End Go packages list (after tidy and get) ---"
+# Add a cache buster file using the CACHEBUST argument before the go build command
+RUN echo "${CACHEBUST}" > /app/sandbox-client/cache_buster.txt
 # Build the main package
 RUN go build -v -x -buildvcs=false -ldflags="-w -s" -o /sandbox-binary .
 

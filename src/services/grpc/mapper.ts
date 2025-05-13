@@ -94,6 +94,7 @@ import {
 	ClineAskType as ProtoClineAskType, // Import enum for mapping
 	ClineSayType as ProtoClineSayType, // Import enum for mapping
 	AskUseMcpServerPayload_McpRequestType as ProtoMcpRequestType, // Import nested enum
+	ClineApiReqCancelReason as ProtoClineApiReqCancelReason, // Added import
 	// COMPLETION_RESULT_CHANGES_FLAG, // Removed import - Use string literal
 } from "../../shared/proto/task_control"
 // MCP Proto Types
@@ -130,9 +131,13 @@ import {
 
 // Returns a Timestamp instance or undefined
 export function dateToProtoTimestamp(date: Date | number | undefined): Timestamp | undefined {
-	if (date === undefined || date === null) return undefined
+	if (date === undefined || date === null) {
+		return undefined
+	}
 	const d = typeof date === "number" ? new Date(date) : date
-	if (isNaN(d.getTime())) return undefined // Handle invalid dates
+	if (isNaN(d.getTime())) {
+		return undefined
+	} // Handle invalid dates
 	const millis = d.getTime()
 	const seconds = Math.floor(millis / 1000)
 	const nanos = (millis % 1000) * 1e6
@@ -146,7 +151,9 @@ export function dateToProtoTimestamp(date: Date | number | undefined): Timestamp
 
 // Maps InternalUserInfo to Partial<ProtoUserInfo>
 export function mapUserInfoToProto(userInfo: InternalUserInfo | undefined): Partial<ProtoUserInfo> | undefined {
-	if (!userInfo) return undefined
+	if (!userInfo) {
+		return undefined
+	}
 	return {
 		displayName: userInfo.displayName ?? undefined,
 		email: userInfo.email ?? undefined,
@@ -182,7 +189,9 @@ export function mapApiConfigurationToProto(
 	config: InternalApiConfiguration | undefined,
 ): Partial<ProtoApiConfiguration> | undefined {
 	// Revert to Partial<>
-	if (!config) return undefined
+	if (!config) {
+		return undefined
+	}
 
 	const getPrimaryModelId = (cfg: InternalApiConfiguration): string | undefined => {
 		switch (cfg.apiProvider) {
@@ -273,32 +282,43 @@ export function mapApiConfigurationToProto(
 // Maps InternalAutoApprovalSettings['actions'] to Partial<ProtoAutoApprovalActions> | undefined
 export function mapAutoApprovalActionsToProto(
 	actions: InternalAutoApprovalSettings["actions"] | undefined,
-): Partial<ProtoAutoApprovalActions> | undefined {
-	// Revert to Partial<>
-	if (!actions) return undefined
-	// Return partial, let caller handle defaults if needed
+): ProtoAutoApprovalActions {
+	// Changed to return full object
+	// If actions is undefined, return a new object with all fields set to false
+	if (!actions) {
+		return {
+			readFiles: false,
+			readFilesExternally: false,
+			editFiles: false,
+			editFilesExternally: false,
+			executeSafeCommands: false,
+			executeAllCommands: false,
+			useBrowser: false,
+			useMcp: false,
+		}
+	}
+	// Return an object with defaults for any missing or non-boolean properties
 	return {
-		readFiles: typeof actions.readFiles === "boolean" ? actions.readFiles : undefined,
-		readFilesExternally: typeof actions.readFilesExternally === "boolean" ? actions.readFilesExternally : undefined,
-		editFiles: typeof actions.editFiles === "boolean" ? actions.editFiles : undefined,
-		editFilesExternally: typeof actions.editFilesExternally === "boolean" ? actions.editFilesExternally : undefined,
-		executeSafeCommands: typeof actions.executeSafeCommands === "boolean" ? actions.executeSafeCommands : undefined,
-		executeAllCommands: typeof actions.executeAllCommands === "boolean" ? actions.executeAllCommands : undefined,
-		useBrowser: typeof actions.useBrowser === "boolean" ? actions.useBrowser : undefined,
-		useMcp: typeof actions.useMcp === "boolean" ? actions.useMcp : undefined,
+		readFiles: typeof actions.readFiles === "boolean" ? actions.readFiles : false,
+		readFilesExternally: typeof actions.readFilesExternally === "boolean" ? actions.readFilesExternally : false,
+		editFiles: typeof actions.editFiles === "boolean" ? actions.editFiles : false,
+		editFilesExternally: typeof actions.editFilesExternally === "boolean" ? actions.editFilesExternally : false,
+		executeSafeCommands: typeof actions.executeSafeCommands === "boolean" ? actions.executeSafeCommands : false,
+		executeAllCommands: typeof actions.executeAllCommands === "boolean" ? actions.executeAllCommands : false,
+		useBrowser: typeof actions.useBrowser === "boolean" ? actions.useBrowser : false,
+		useMcp: typeof actions.useMcp === "boolean" ? actions.useMcp : false,
 	}
 }
 
 // Maps InternalAutoApprovalSettings to Partial<ProtoAutoApprovalSettings>
-export function mapAutoApprovalSettingsToProto(settings: InternalAutoApprovalSettings): Partial<ProtoAutoApprovalSettings> {
-	// Revert to Partial<>
+export function mapAutoApprovalSettingsToProto(settings: InternalAutoApprovalSettings): ProtoAutoApprovalSettings {
+	// Changed to return full object
 	return {
-		version: settings.version, // Required in Partial as well
-		enabled: settings.enabled, // Required in Partial as well
-		// Ensure actions is an object, as it's a required message field in proto
-		actions: (mapAutoApprovalActionsToProto(settings.actions) as ProtoAutoApprovalActions) ?? {},
-		maxRequests: settings.maxRequests ?? undefined,
-		enableNotifications: settings.enableNotifications ?? undefined,
+		version: settings.version,
+		enabled: settings.enabled,
+		actions: mapAutoApprovalActionsToProto(settings.actions), // mapAutoApprovalActionsToProto now returns a full object
+		maxRequests: settings.maxRequests ?? 0, // Default to 0 if undefined
+		enableNotifications: settings.enableNotifications ?? false, // Default to false if undefined
 	}
 }
 
@@ -306,7 +326,9 @@ export function mapAutoApprovalSettingsToProto(settings: InternalAutoApprovalSet
 export function mapViewportToProto(
 	viewport: InternalBrowserSettings["viewport"] | undefined,
 ): Partial<ProtoBrowserViewport> | undefined {
-	if (!viewport) return undefined
+	if (!viewport) {
+		return undefined
+	}
 	return {
 		width: typeof viewport.width === "number" ? viewport.width : undefined,
 		height: typeof viewport.height === "number" ? viewport.height : undefined,
@@ -340,11 +362,12 @@ export function mapChatSettingsToProto(settings: InternalChatSettings): Partial<
 	}
 }
 
-// Mapper for InternalClineMessage to Partial<ProtoClineMessage>
-export function mapClineMessageToProto(msg: InternalClineMessage | undefined): Partial<ProtoClineMessage> | undefined {
-	// Revert to Partial<>
+// Mapper for InternalClineMessage to ProtoClineMessage
+export function mapClineMessageToProto(msg: InternalClineMessage | undefined): ProtoClineMessage | undefined {
 	Logger.trace(`[gRPC-Trace: Mapper:mapClineMessageToProto] Input: ${JSON.stringify(msg)}`)
-	if (!msg) return undefined
+	if (!msg) {
+		return undefined
+	}
 
 	const mapType = (type: InternalClineMessage["type"]): ProtoClineMessageType => {
 		return type === "ask" ? ProtoClineMessageType.ASK : ProtoClineMessageType.SAY
@@ -356,6 +379,8 @@ export function mapClineMessageToProto(msg: InternalClineMessage | undefined): P
 		// Provide a default of 0 if msg.ts is undefined/null.
 		ts: msg.ts ?? 0,
 		type: mapType(msg.type), // Required in Partial
+		askType: ProtoClineAskType.CLINE_ASK_TYPE_UNSPECIFIED, // Initialize with default
+		sayType: ProtoClineSayType.CLINE_SAY_TYPE_UNSPECIFIED, // Initialize with default
 		images: msg.images ?? [],
 		partial: msg.partial ?? false,
 		lastCheckpointHash: msg.lastCheckpointHash ?? undefined,
@@ -522,16 +547,17 @@ export function mapClineMessageToProto(msg: InternalClineMessage | undefined): P
 							cacheWrites: payload.cacheWrites ?? undefined,
 							cacheReads: payload.cacheReads ?? undefined,
 							cost: payload.cost ?? undefined,
-							// Map cancelReason enum if needed
+							cancelReason: mapInternalCancelReasonToProto(payload.cancelReason),
+							streamingFailedMessage: payload.streamingFailedMessage ?? undefined,
 						} as ProtoSayApiReqInfoPayload,
 					}
 					break
 				}
 				case "text":
-					;(protoMsg as any).sayPayload = {
-						$case: "sayTextPayload",
-						sayTextPayload: { textContent: msg.text ?? "" } as ProtoSayTextPayload,
-					}
+					// Assuming oneof=unions for ts-proto generation (default)
+					// This directly sets the specific oneof field.
+					// The $case property (protoMsg.sayPayload) should be updated by the ts-proto runtime.
+					protoMsg.sayTextPayload = { textContent: msg.text ?? "" } // This directly sets the oneof field
 					break
 				case "reasoning":
 					;(protoMsg as any).sayPayload = {
@@ -541,12 +567,10 @@ export function mapClineMessageToProto(msg: InternalClineMessage | undefined): P
 					break
 				case "completion_result": {
 					const changesFlag = "HAS_CHANGES" // Use string literal
-					;(protoMsg as any).sayPayload = {
-						$case: "sayCompletionResultPayload",
-						sayCompletionResultPayload: {
-							resultText: msg.text?.replace(changesFlag, "") ?? "",
-							hasChanges: msg.text?.includes(changesFlag) ?? false,
-						} as ProtoSayCompletionResultPayload,
+					// Assuming oneof=unions for ts-proto generation (default)
+					protoMsg.sayCompletionResultPayload = {
+						resultText: msg.text?.replace(changesFlag, "") ?? "",
+						hasChanges: msg.text?.includes(changesFlag) ?? false,
 					}
 					break
 				}
@@ -722,21 +746,24 @@ export function mapClineMessageToProto(msg: InternalClineMessage | undefined): P
 		delete protoMsg.sayType // Use camelCase
 	}
 
-	// Clear generic text if a specific payload was successfully set
-	if ((protoMsg as any).askPayload?.$case || (protoMsg as any).sayPayload?.$case) {
-		// Only clear text if it wasn't explicitly set as the fallback
-		if (protoMsg.text === msg.text) {
-			protoMsg.text = undefined
-		}
+	// Clear generic text if a specific payload was successfully set.
+	// For oneof=unions, the $case property is named after the oneof field (camelCased).
+	// Cast to 'any' to bypass TypeScript error if it can't see the $case property on Partial<ProtoClineMessage>.
+	if ((protoMsg as any).askPayload || (protoMsg as any).sayPayload) {
+		// If a specific oneof case is active (indicated by the $case property being set),
+		// the generic 'text' field should be undefined to avoid ambiguity.
+		protoMsg.text = undefined
 	}
 
 	Logger.trace(`[gRPC-Trace: Mapper:mapClineMessageToProto] Output: ${JSON.stringify(protoMsg)}`)
-	return protoMsg // Return Partial object
+	return protoMsg as ProtoClineMessage // Return as full object
 }
 
 // Helper to map internal ClineSayTool to ProtoSayToolPayload
 function mapInternalSayToolToProto(payload: ClineSayTool | undefined): Partial<ProtoSayToolPayload> {
-	if (!payload) return {}
+	if (!payload) {
+		return {}
+	}
 
 	let protoToolType: ProtoSayToolType = ProtoSayToolType.SAY_TOOL_TYPE_UNSPECIFIED
 	switch (payload.tool) {
@@ -892,7 +919,9 @@ function mapInternalSayToProtoSayType(say: InternalClineMessage["say"] | undefin
 // Mapper for ToolUse (internal) to Proto JS Object (ProtoToolUseBlock)
 export function mapToolUseBlockToProto(block: ToolUse | undefined): Partial<ProtoToolUseBlock> | undefined {
 	// Revert to Partial<>
-	if (!block) return undefined
+	if (!block) {
+		return undefined
+	}
 	Logger.trace(`[gRPC-Trace: Mapper:mapToolUseBlockToProto] Input: ${JSON.stringify(block)}`)
 	let inputValue: Value | undefined = undefined
 	if (block.params && typeof block.params === "object") {
@@ -910,18 +939,41 @@ export function mapToolUseBlockToProto(block: ToolUse | undefined): Partial<Prot
 	}
 
 	// ToolUse lacks 'id', use a placeholder or handle differently if required by proto
-	const toolUseIdPlaceholder = `tool_${Date.now()}` // Example placeholder
-
-	// Removed duplicate toolUseIdPlaceholder declaration
+	let toolUseIdToUse = (block as any).id // Try to access id if it exists (e.g., if ToolUse type is updated)
+	if (!toolUseIdToUse) {
+		toolUseIdToUse = `tool_${Date.now()}` // Example placeholder
+		Logger.warn(
+			`[gRPC-Warn: Mapper:mapToolUseBlockToProto] Internal ToolUse block for '${block.name}' is missing an 'id'. Using placeholder: ${toolUseIdToUse}. The model-provided tool_use_id should be preserved.`,
+		)
+	}
 
 	// Define as Partial
 	const protoToolUse: Partial<ProtoToolUseBlock> = {
-		toolUseId: toolUseIdPlaceholder, // Required in Partial
+		toolUseId: toolUseIdToUse, // Required in Partial
 		name: block.name, // Required in Partial
 		input: inputValue,
 	}
 	Logger.trace(`[gRPC-Trace: Mapper:mapToolUseBlockToProto] Output: ${JSON.stringify(protoToolUse)}`)
 	return protoToolUse // Return Partial object
+}
+
+// Helper to map internal ClineApiReqCancelReason to ProtoClineApiReqCancelReason enum
+function mapInternalCancelReasonToProto(
+	reason: ClineApiReqInfo["cancelReason"], // Simplified signature
+): ProtoClineApiReqCancelReason {
+	// Corrected return type to use the imported enum directly
+	// Explicitly check for undefined before switch
+	if (reason === undefined) {
+		return ProtoClineApiReqCancelReason.CLINE_API_REQ_CANCEL_REASON_UNSPECIFIED
+	}
+	switch (reason) {
+		case "streaming_failed":
+			return ProtoClineApiReqCancelReason.STREAMING_FAILED
+		case "user_cancelled":
+			return ProtoClineApiReqCancelReason.USER_CANCELLED
+		default:
+			return ProtoClineApiReqCancelReason.CLINE_API_REQ_CANCEL_REASON_UNSPECIFIED
+	}
 }
 
 // Mapper for ToolResponse content to Proto JS Object (ProtoToolResultBlock)
@@ -930,7 +982,9 @@ export function mapToolResultBlockToProto(
 	content: ToolResponse | undefined,
 ): Partial<ProtoToolResultBlock> | undefined {
 	// Revert to Partial<>
-	if (!toolUseId) return undefined
+	if (!toolUseId) {
+		return undefined
+	}
 	Logger.trace(`[gRPC-Trace: Mapper:mapToolResultBlockToProto] Input ID: ${toolUseId}, Content Type: ${typeof content}`)
 
 	let textContent: string | undefined = undefined
@@ -1000,62 +1054,66 @@ export function mapExtensionMessageToProto(
 ): Partial<ProtoExtensionMessage> | null {
 	// Return Partial<> or null
 	try {
-		// Define as Partial
+		// Prioritize sending an ERROR message if message.error is set from the internal message
+		if (message.error) {
+			return {
+				type: ProtoExtensionMessageType.ERROR,
+				errorMessage: message.error,
+			}
+		}
+
 		let responsePayload: Partial<ProtoExtensionMessage> = {
-			// Use 0 as the default enum value (common practice)
-			type: 0, // Required: Provide default (assuming 0 is UNSPECIFIED)
-			errorMessage: undefined,
-			// payload: undefined, // Don't initialize oneof directly
+			type: ProtoExtensionMessageType.EXTENSION_MESSAGE_TYPE_UNSPECIFIED, // Default
 		}
 
 		// Access properties from the correctly typed 'message' parameter
 		switch (message.type) {
 			case "state":
-				// Access payload via message.state
-				const mappedState = mapExtensionStateToProto(message.state) // Use message.state
+				const mappedState = mapExtensionStateToProto(message.state)
 				if (mappedState) {
 					responsePayload.type = ProtoExtensionMessageType.STATE
-					// Assign oneof using $case and cast sub-message
-					;(responsePayload as any).payload = { $case: "state", state: mappedState as ProtoExtensionState } // Cast needed here
+					;(responsePayload as any).payload = { $case: "state", state: mappedState as ProtoExtensionState }
 				} else {
 					return null
 				}
 				break
-			case "partialMessage": // Handle partial message type
-				// Access payload via message.partialMessage
-				const partialMsg = mapClineMessageToProto(message.partialMessage) // Use message.partialMessage
+			case "partialMessage":
+				const partialMsg = mapClineMessageToProto(message.partialMessage)
 				if (partialMsg) {
 					responsePayload.type = ProtoExtensionMessageType.PARTIAL_MESSAGE
-					// Assign oneof using $case and cast sub-message
 					;(responsePayload as any).payload = {
 						$case: "partialMessage",
 						partialMessage: partialMsg as ProtoClineMessage,
-					} // Cast needed here
+					}
 				} else {
 					return null
 				}
 				break
-			// Removed case "text": as it's not a top-level type in InternalExtensionMessage
-			// Removed case "tool_use": as it's not a top-level type in InternalExtensionMessage
-			// Removed case "error": as it's not a top-level type in InternalExtensionMessage
-			// Add cases for other InternalExtensionMessage types if they need mapping
+			// Removed case "text":
+			// Complete text messages from the extension are expected to be of type "partialMessage"
+			// with a ClineMessage payload where partial=false and say="text".
+			// That flow is handled by the "partialMessage" case above.
+			// ProtoExtensionMessageType.TEXT (value 3) with payload text_message (a ClineMessage)
+			// would be populated by that existing path if a full text message is sent.
+
+			// Note: A top-level "error" type from InternalExtensionMessage is handled by the initial `if (message.error)` check.
+			// Task-specific errors are typically conveyed within a ClineMessage (say: "error").
+			// Other InternalExtensionMessage types (like "selectedImages", "ollamaModels", etc.) would be added here
+			// if they need to be streamed over gRPC during active RPCs like StartTask.
+			// For now, focusing on core task flow messages.
 			default:
-				// Use exhaustive check pattern if possible, or log unhandled types
-				Logger.trace(`[gRPC-Trace: Mapper:mapExtensionMessageToProto] Ignoring internal message type: ${message.type}`)
+				Logger.trace(
+					`[gRPC-Trace: Mapper:mapExtensionMessageToProto] Ignoring internal message type for direct mapping: ${(message as any).type}`,
+				)
 				return null
 		}
-		return responsePayload // Return Partial object
+		return responsePayload
 	} catch (error: any) {
-		Logger.error(`[gRPC-Error: Mapper:mapExtensionMessageToProto] Error mapping ExtensionMessage: ${error.message}`, error)
-		try {
-			// Return a Partial error message, don't set payload directly
-			return {
-				type: ProtoExtensionMessageType.ERROR,
-				errorMessage: `Internal mapping error: ${error.message}`,
-				// payload should not be set here for Partial
-			}
-		} catch {
-			return null
+		Logger.error(`[gRPC-Error: Mapper:mapExtensionMessageToProto] Error: ${error.message}`, error)
+		return {
+			// Return a ProtoExtensionMessage indicating an error
+			type: ProtoExtensionMessageType.ERROR,
+			errorMessage: `Internal mapping error: ${error.message}`,
 		}
 	}
 }
@@ -1104,7 +1162,9 @@ export function mapProtoToolResultToInternal(protoResult: Partial<ProtoToolResul
 export function mapExtensionStateToProto(state: InternalExtensionState | undefined): ProtoExtensionState | undefined {
 	// Changed return type from Partial<>
 	Logger.trace(`[gRPC-Trace: Mapper:mapExtensionStateToProto] Input State (version: ${state?.version})`)
-	if (!state) return undefined
+	if (!state) {
+		return undefined
+	}
 
 	const mapPlatform = (platform: InternalPlatform | undefined): ProtoPlatform => {
 		switch (platform) {
@@ -1150,6 +1210,8 @@ export function mapExtensionStateToProto(state: InternalExtensionState | undefin
 		uriScheme: state.uriScheme ?? undefined,
 		checkpointTrackerErrorMessage: state.checkpointTrackerErrorMessage ?? undefined,
 		mcpMarketplaceEnabled: state.mcpMarketplaceEnabled ?? undefined,
+		// Note: remoteBrowserHost is also in browserSettings. Ensure consistency or pick one source.
+		// Currently, this top-level one takes precedence if state.remoteBrowserHost is set.
 		remoteBrowserHost: state.remoteBrowserHost ?? undefined,
 		customInstructions: state.customInstructions ?? undefined,
 		// Use sub-mappers returning Partial<>, cast results
@@ -1157,15 +1219,28 @@ export function mapExtensionStateToProto(state: InternalExtensionState | undefin
 		taskHistory: state.taskHistory?.map((item) => mapHistoryItemToProto(item) as ProtoHistoryItem) ?? [], // Cast items
 		currentTaskItem: state.currentTaskItem ? (mapHistoryItemToProto(state.currentTaskItem) as ProtoHistoryItem) : undefined, // Cast item
 		apiConfiguration: mapApiConfigurationToProto(state.apiConfiguration) as ProtoApiConfiguration | undefined, // Cast
-		autoApprovalSettings: mapAutoApprovalSettingsToProto(state.autoApprovalSettings) as ProtoAutoApprovalSettings, // Cast
+		autoApprovalSettings: mapAutoApprovalSettingsToProto(state.autoApprovalSettings), // Now returns full object
 		browserSettings: mapBrowserSettingsToProto(state.browserSettings) as ProtoBrowserSettings, // Cast
 		chatSettings: mapChatSettingsToProto(state.chatSettings) as ProtoChatSettings, // Cast
 		// Assuming ProtoClineRulesToggles only has optional 'toggles' map
 		globalClineRulesToggles: { toggles: state.globalClineRulesToggles ?? {} } as ProtoClineRulesToggles, // Cast
 		localClineRulesToggles: { toggles: state.localClineRulesToggles ?? {} } as ProtoClineRulesToggles, // Cast
 		// Ensure ALL required fields from ProtoExtensionState are included here with defaults
-		clineMessages: [], // Provide default for required array
+		clineMessages:
+			state.clineMessages
+				?.map((msg) => mapClineMessageToProto(msg) as ProtoClineMessage | undefined)
+				.filter((mappedMsg): mappedMsg is ProtoClineMessage => mappedMsg !== undefined) ?? [], // Map and filter out undefined
 		// Add other required fields from ProtoExtensionState with defaults if necessary
+	}
+	if (
+		protoState.apiConfiguration &&
+		!protoState.apiConfiguration.apiModelId &&
+		protoState.apiConfiguration.apiProvider !== ProtoApiProvider.API_PROVIDER_UNSPECIFIED &&
+		protoState.apiConfiguration.apiProvider !== ProtoApiProvider.CLINE
+	) {
+		Logger.warn(
+			`[gRPC-Warn: Mapper:mapExtensionStateToProto] apiConfiguration is present with provider ${protoState.apiConfiguration.apiProvider} but apiModelId is empty. This might be an issue.`,
+		)
 	}
 
 	// Ensure the returned object conforms to ProtoExtensionState (TypeScript will check required fields)
@@ -1178,7 +1253,9 @@ export function mapExtensionStateToProto(state: InternalExtensionState | undefin
 
 // Maps InternalMcpTool to Partial<ProtoMcpTool>
 export function mapMcpToolToProto(tool: InternalMcpTool | undefined): Partial<ProtoMcpTool> | undefined {
-	if (!tool) return undefined
+	if (!tool) {
+		return undefined
+	}
 
 	let inputSchemaString: string | undefined = undefined
 	if (tool.inputSchema) {
@@ -1205,7 +1282,9 @@ export function mapMcpToolToProto(tool: InternalMcpTool | undefined): Partial<Pr
 
 // Maps InternalMcpResource to Partial<ProtoMcpResource>
 export function mapMcpResourceToProto(resource: InternalMcpResource | undefined): Partial<ProtoMcpResource> | undefined {
-	if (!resource) return undefined
+	if (!resource) {
+		return undefined
+	}
 	return {
 		uri: resource.uri, // Required
 		name: resource.name, // Required
@@ -1218,7 +1297,9 @@ export function mapMcpResourceToProto(resource: InternalMcpResource | undefined)
 export function mapMcpResourceTemplateToProto(
 	template: InternalMcpResourceTemplate | undefined,
 ): Partial<ProtoMcpResourceTemplate> | undefined {
-	if (!template) return undefined
+	if (!template) {
+		return undefined
+	}
 	return {
 		uriTemplate: template.uriTemplate, // Required
 		name: template.name, // Required
@@ -1243,7 +1324,9 @@ export function mapMcpServerStatusToProto(status: InternalMcpServer["status"] | 
 
 // Maps InternalMcpServer to Partial<ProtoMcpServer>
 export function mapMcpServerToProto(server: InternalMcpServer | undefined): Partial<ProtoMcpServer> | undefined {
-	if (!server) return undefined
+	if (!server) {
+		return undefined
+	}
 
 	let finalConfigString: string
 	if (typeof server.config === "string") {
@@ -1277,7 +1360,9 @@ export function mapMcpServerToProto(server: InternalMcpServer | undefined): Part
 
 // Maps InternalMcpServer[] to Partial<ProtoMcpServers>
 export function mapMcpServersToProto(servers: InternalMcpServer[] | undefined): Partial<ProtoMcpServers> | undefined {
-	if (!servers) return undefined
+	if (!servers) {
+		return undefined
+	}
 	return {
 		mcpServers: servers.map((s) => mapMcpServerToProto(s) as ProtoMcpServer) ?? [],
 	}

@@ -20,7 +20,12 @@ export function parseAssistantMessage(assistantMessage: string) {
 			const paramClosingTag = `</${currentParamName}>`
 			if (currentParamValue.endsWith(paramClosingTag)) {
 				// end of param value
-				currentToolUse.params[currentParamName] = currentParamValue.slice(0, -paramClosingTag.length).trim()
+				const extractedValue = currentParamValue.slice(0, -paramClosingTag.length).trim()
+				if (currentParamName === "tool_use_id") {
+					currentToolUse.id = extractedValue
+				} else {
+					currentToolUse.params[currentParamName] = extractedValue
+				}
 				currentParamName = undefined
 				continue
 			} else {
@@ -82,6 +87,7 @@ export function parseAssistantMessage(assistantMessage: string) {
 			if (accumulator.endsWith(toolUseOpeningTag)) {
 				// start of a new tool use
 				currentToolUse = {
+					id: "", // Initialize id, will be populated by tool_use_id param or default
 					type: "tool_use",
 					name: toolUseOpeningTag.slice(1, -1) as ToolUseName,
 					params: {},
@@ -121,7 +127,16 @@ export function parseAssistantMessage(assistantMessage: string) {
 		// stream did not complete tool call, add it as partial
 		if (currentParamName) {
 			// tool call has a parameter that was not completed
-			currentToolUse.params[currentParamName] = accumulator.slice(currentParamValueStartIndex).trim()
+			const extractedValue = accumulator.slice(currentParamValueStartIndex).trim()
+			if (currentParamName === "tool_use_id") {
+				currentToolUse.id = extractedValue
+			} else {
+				currentToolUse.params[currentParamName] = extractedValue
+			}
+		}
+		// If id is still empty after parsing all params or if the stream ended mid-tool-use, assign a default.
+		if (!currentToolUse.id) {
+			currentToolUse.id = `cline_tool_${Date.now()}_${Math.random().toString(36).substring(7)}`
 		}
 		contentBlocks.push(currentToolUse)
 	}

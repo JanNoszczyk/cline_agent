@@ -30,11 +30,12 @@ cleanup_and_aggregate_all_logs() {
 
   # Aggregate all logs in run_logs/
   echo "Attempting to aggregate individual logs on exit..."
-  if [ -f "scripts/aggregate_run_logs.sh" ]; then
-    bash scripts/aggregate_run_logs.sh
-  else
-    echo "Warning: scripts/aggregate_run_logs.sh not found. Skipping aggregation on exit."
-  fi
+  # if [ -f "scripts/aggregate_run_logs.sh" ]; then
+  #   bash scripts/aggregate_run_logs.sh
+  # else
+  #   echo "Warning: scripts/aggregate_run_logs.sh not found. Skipping aggregation on exit."
+  # fi
+  echo "Log aggregation step has been removed as per user request."
 
   # Stop and remove Docker Compose services
   echo "Stopping Docker Compose services (if any are running)..."
@@ -63,11 +64,24 @@ echo "Starting Docker Compose for sandbox-client in the background..."
 echo "Docker Compose output will be streamed to the terminal."
 # Individual logs (vscode_server.log, grpc_server_debug.log, etc.) will be in run_logs/ as copied by the container's entrypoint.
 
+# Build the sandbox-client service first, passing the dynamic CACHEBUST argument to ensure Go binary is rebuilt.
+echo "Building sandbox-client service with cache bust..."
+docker compose build --build-arg CACHEBUST=$(date +%s) sandbox-client
+BUILD_EXIT_CODE=$?
+
+if [ $BUILD_EXIT_CODE -ne 0 ]; then
+  echo "Error: Docker Compose build failed with exit code $BUILD_EXIT_CODE."
+  # The trap will handle cleanup, so we can exit here.
+  exit $BUILD_EXIT_CODE
+fi
+
+echo "Build complete. Starting Docker Compose for sandbox-client in the background..."
 # Run docker compose up in the background.
 # The --abort-on-container-exit flag will cause 'docker compose up' to stop all containers if any container was stopped.
-docker compose up --build --abort-on-container-exit sandbox-client &
+# No need for --build here as we've just built it.
+docker compose up --abort-on-container-exit sandbox-client &
 DOCKER_COMPOSE_PID=$!
-echo "$DOCKER_COMPOSE_PID" > "$DOCKER_COMPOSE_PID_FILE" # Store PID for potential use by trap if needed, though trap usually handles signals to the script itself.
+echo "$DOCKER_COMPOSE_PID" > "$DOCKER_COMPOSE_PID_FILE" # Store PID
 echo "Docker Compose running in background with PID $DOCKER_COMPOSE_PID. Waiting for completion..."
 
 # Wait for the background Docker Compose process

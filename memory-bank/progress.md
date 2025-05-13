@@ -12,31 +12,39 @@
 *   **Testing Infrastructure & Logging:**
     *   **`scripts/update-sandbox-vsix.sh`**: Reliably packages the extension for Docker testing.
     *   **`scripts/run-sandbox-docker.sh`**: Orchestrates Docker builds and runs. It now includes robust `trap` handling to ensure logs are fetched and aggregated even on interruption (Ctrl+C).
-    *   **`scripts/aggregate_run_logs.sh`**: Successfully combines individual logs from `run_logs/` into `run_logs/aggregated_run_logs.txt`.
+    *   **`scripts/aggregate_run_logs.sh`**: Note: Log aggregation is currently disabled as per user request in `run-sandbox-docker.sh`. Analysis relies on individual logs.
     *   **`sandbox-client/entrypoint.sh`**: Correctly configures log paths, ensuring `grpc_server_debug.log` is populated and `vscode_server.log` is moved to `run_logs/other_logs/`.
-    *   The primary log for analysis is now `run_logs/aggregated_run_logs.txt`.
+    *   Primary logs for analysis are individual files in `run_logs/` (e.g., `go_client.log`, `grpc_server_debug.log`).
 
 ## 2. What's Left (Prioritized)
-1.  **(VERIFIED) `SendUserInput` RPC E2E Test:**
-    *   The E2E test for `SendUserInput` has been successfully verified. Log analysis confirms the Go client sent inputs via `SendUserInput`, and the server processed them, leading to continued AI interaction and a final completion result.
-2.  **(NOW ACTIVE) Type Mapping Verification:** Rigorously verify `src/services/grpc/mapper.ts` for all currently active RPCs (`UpdateSettings`, `StartTask`, `SendUserInput`) and their associated message types. This is the immediate next major step.
-3.  **(Refinement) Error Handling:** Systematically improve gRPC error reporting and handling throughout the client-server communication.
-4.  **(Refinement) Full Task Lifecycle Management:** Ensure robust handling of task completion, client-initiated cancellations, and various server-side error scenarios within the gRPC stream interactions.
-5.  **(Implementation) Other Services:** Implement and test other gRPC services like `BrowserService`, `CheckpointsService`, `McpService` as per project requirements.
+1.  **(Refinement) gRPC Error Handling:**
+    *   Improved routing of `say: "error"` messages in `GrpcBridge.ts` to emit top-level gRPC `ERROR`.
+    *   Updated `Task.handleError` to call `abortTask()` ensuring task termination on tool errors.
+2.  **(Refinement) Full Task Lifecycle Management:**
+    *   Server-side error handling during tool execution now leads to task abortion and gRPC stream closure.
+    *   Client-initiated cancellations (`cancelled` event on gRPC stream) correctly trigger `task.abortTask()`.
+    *   Normal task completion (`SAY_COMPLETION_RESULT`) allows the gRPC stream to remain open for potential follow-up interactions or until the task is naturally disposed of by the Controller.
+3.  **(Verify `tool_use_id` Flow):**
+    *   `ToolUse` interface in `src/core/assistant-message/index.ts` updated with `id: string`.
+    *   `toolParamNames` in `src/core/assistant-message/index.ts` updated with `"tool_use_id"`.
+    *   `parseAssistantMessage` in `src/core/assistant-message/parse-assistant-message.ts` updated to populate `ToolUse.id` from the `tool_use_id` parameter or assign a default.
+    *   Verification is **pending a full successful test run** due to the last test being interrupted.
+4.  **(Implementation) Expand Service Coverage:** Begin implementing and testing `BrowserService`.
+5.  **(Documentation) Update Memory Bank:** (This step)
 
 ## 3. Current Status
 *   **gRPC Server in Docker:** Stable and operational.
-*   **`UpdateSettings` RPC:** Working and E2E tested.
-*   **`StartTask` RPC & `TaskStartedInfo` Stream:** Working and E2E tested.
-*   **`sendUserInput` RPC:** Working and E2E tested.
-*   **Build & Test Workflow:** Robust and provides aggregated logs for analysis.
+*   **`UpdateSettings`, `StartTask`, `sendUserInput` RPCs:** Working and E2E tested.
+*   **Build & Test Workflow:** Robust. Log analysis now focuses on individual logs.
 *   **Vite Build Issue (`path.basename`):** Resolved.
 *   **Protobuf/`webContentPb` errors in `webview-ui/src/services/grpc-client.ts` (compile-time):** Believed resolved.
+*   **gRPC Error Handling:** Initial refinements implemented.
+*   **`tool_use_id` Propagation:** Implementation changes are complete.
 
 ## 4. Known Issues / Blockers
 *   **No current major blockers.**
-*   **`run_logs/aggregated_run_logs.txt` size:** This file can become too large for direct AI analysis, requiring fallback to individual log files. (Minor operational note, not a blocker).
+*   **Interrupted Test Run:** The most recent test run was interrupted, preventing full verification of the `tool_use_id` flow. This needs to be re-checked after the next set of changes.
 *   **Lower Priority:**
-    *   Full implementation and testing of `BrowserService`, `CheckpointsService`, `McpService`.
+    *   Full implementation and testing of `CheckpointsService`, `McpService`.
     *   Comprehensive verification of all type mappings in `mapper.ts` (beyond the currently active RPCs).
     *   Minor linting warnings in the codebase.

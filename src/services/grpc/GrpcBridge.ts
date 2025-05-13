@@ -25,9 +25,12 @@ import {
 	// ProtoClineMessage, // Import for mapping - Will import directly from proto
 	ProtoToolUseBlock, // Import for mapping
 	// Import other specific proto types if needed by mapper functions
+	mapBrowserSettingsToProto as mapInternalBrowserSettingsToProto, // Renamed for clarity
 } from "./mapper" // Import state type and mapping functions
 // Import Proto types directly
 import * as taskControlPb from "../../shared/proto/task_control" // Namespace import
+import * as browserPb from "../../shared/proto/browser" // Import browser proto messages
+import * as commonPb from "../../shared/proto/common" // Import common proto messages
 import { ExtensionMessage, ClineMessage } from "../../shared/ExtensionMessage" // Import ExtensionMessage for type checking
 import { ToolResponse } from "../../core/task" // Import internal tool types from index
 import { ToolUse } from "@core/assistant-message" // Import ToolUse type
@@ -35,11 +38,13 @@ import { mapProtoToolResultToInternal, mapMcpServersToProto } from "./mapper" //
 import { formatResponse } from "@core/prompts/responses" // Import formatResponse for image blocks
 import Anthropic from "@anthropic-ai/sdk" // Import Anthropic for ContentBlockParam type
 import { Logger } from "@services/logging/Logger" // Import Logger
+import { BrowserSession } from "@services/browser/BrowserSession" // Import BrowserSession
 import { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb" // Import Timestamp
 import { updateGlobalState, updateApiConfiguration, getAllExtensionState } from "../../core/storage/state" // Import for settings update & API config
 import { ApiConfiguration, ApiProvider } from "../../shared/api" // Import internal ApiConfiguration type
 import { buildApiHandler } from "@api/index" // Import buildApiHandler
 import { BrowserSettings } from "../../shared/BrowserSettings" // Import settings type
+import { ChatSettings } from "../../shared/ChatSettings" // Import ChatSettings type
 import * as fs from "fs/promises" // Added for file operations
 import { DEFAULT_MCP_TIMEOUT_SECONDS } from "@shared/mcp" // Added for default timeout
 import { handleFileServiceRequest } from "../../core/controller/file" // Import file handler
@@ -150,7 +155,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 				if (!clientId) {
 					Logger.error("[GrpcBridge:StartTask] Client ID missing in metadata")
 					call.emit("error", { code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
-					if (!call.writableEnded) call.end()
+					if (!call.writableEnded) {
+						call.end()
+					}
 					return
 				}
 
@@ -377,7 +384,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			},
 			SubmitAskResponse: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				if (!clientId) {
+					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				}
 				try {
 					const webviewMsg: WebviewMessage = {
 						type: "askResponse",
@@ -393,7 +402,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			},
 			SubmitOptionsResponse: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				if (!clientId) {
+					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				}
 				try {
 					const webviewMsg: WebviewMessage = {
 						type: "askResponse",
@@ -408,7 +419,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			},
 			ClearTask: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				if (!clientId) {
+					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				}
 				try {
 					await this.handleClearTask(clientId)
 					callback(null, {})
@@ -418,7 +431,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			},
 			CancelTask: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				if (!clientId) {
+					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				}
 				try {
 					await this.handleCancelTask(clientId)
 					callback(null, {})
@@ -428,7 +443,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			},
 			DeleteTaskWithId: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				if (!clientId) {
+					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				}
 				try {
 					await this.handleDeleteTaskWithId(clientId, call.request.task_id)
 					callback(null, {})
@@ -438,7 +455,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			},
 			ApplyBrowserSettings: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				if (!clientId) {
+					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				}
 				try {
 					await this.handleApplyBrowserSettings(clientId, call.request)
 					callback(null, {})
@@ -448,7 +467,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			},
 			OpenFile: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				if (!clientId) {
+					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+				}
 				try {
 					await this.handleOpenFile(clientId, call.request.file_path)
 					callback(null, {})
@@ -522,6 +543,23 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 		}
 	}
 	private createBrowserImplementation(): grpc.UntypedServiceImplementation {
+		const getDetectedChromePathHandler: grpc.handleUnaryCall<commonPb.EmptyRequest, browserPb.ChromePath> = (
+			call: grpc.ServerUnaryCall<commonPb.EmptyRequest, browserPb.ChromePath>,
+			callback: grpc.sendUnaryData<browserPb.ChromePath>,
+		) => {
+			// Minimal diagnostic version
+			try {
+				const hardcodedResponse: browserPb.ChromePath = browserPb.ChromePath.create({
+					path: "test/path",
+					isBundled: false,
+				})
+				callback(null, hardcodedResponse)
+			} catch (error: any) {
+				Logger.error(`[GrpcBridge:getDetectedChromePath] Minimal Error: ${error.message}`)
+				callback({ code: grpc.status.INTERNAL, details: error.message } as grpc.ServiceError, null)
+			}
+		}
+
 		return {
 			getBrowserConnectionInfo: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
@@ -542,11 +580,69 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 					callback({ code: grpc.status.INTERNAL, details: error.message })
 				}
 			},
-			ExecuteBrowserAction: (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
-				Logger.warn("[GrpcBridge:ExecuteBrowserAction] Not implemented.") // Use static Logger
-				callback({ code: grpc.status.UNIMPLEMENTED, details: "ExecuteBrowserAction not implemented" })
+			testBrowserConnection: async (
+				call: grpc.ServerUnaryCall<commonPb.StringRequest, browserPb.BrowserConnection>,
+				callback: grpc.sendUnaryData<browserPb.BrowserConnection>,
+			) => {
+				const endpoint = call.request.value
+				if (!endpoint) {
+					return callback({ code: grpc.status.INVALID_ARGUMENT, details: "Endpoint missing in StringRequest" })
+				}
+				try {
+					const currentSettings = (await getAllExtensionState(this.context)).browserSettings
+					const browserSession = new BrowserSession(this.context, currentSettings)
+					const result = await browserSession.testConnection(endpoint)
+					callback(null, { success: result.success, message: result.message, endpoint: result.endpoint ?? undefined })
+				} catch (error: any) {
+					Logger.error(`[GrpcBridge:testBrowserConnection] Error: ${error.message}`)
+					callback({ code: grpc.status.INTERNAL, details: error.message })
+				}
 			},
-			// TODO: Implement other browser service methods like testBrowserConnection, discoverBrowser, etc.
+			discoverBrowser: async (
+				call: grpc.ServerUnaryCall<commonPb.EmptyRequest, browserPb.BrowserConnection>,
+				callback: grpc.sendUnaryData<browserPb.BrowserConnection>,
+			) => {
+				try {
+					const currentSettings = (await getAllExtensionState(this.context)).browserSettings
+					const browserSession = new BrowserSession(this.context, currentSettings)
+					const path = await browserSession.getDetectedChromePath()
+					if (path) {
+						// Attempt to test connection to the discovered browser if possible, or just confirm path found
+						// For simplicity, we'll assume finding the path is success for now.
+						// A more robust implementation might try to launch and connect.
+						callback(null, { success: true, message: `Discovered browser at: ${path}`, endpoint: undefined })
+					} else {
+						callback(null, { success: false, message: "Compatible browser not found.", endpoint: undefined })
+					}
+				} catch (error: any) {
+					Logger.error(`[GrpcBridge:discoverBrowser] Error: ${error.message}`)
+					callback({ code: grpc.status.INTERNAL, details: error.message })
+				}
+			},
+			getDetectedChromePath: getDetectedChromePathHandler,
+			updateBrowserSettings: async (
+				call: grpc.ServerUnaryCall<browserPb.UpdateBrowserSettingsRequest, commonPb.Boolean>,
+				callback: grpc.sendUnaryData<commonPb.Boolean>,
+			) => {
+				try {
+					const req = call.request
+					const newSettings: BrowserSettings = {
+						viewport: {
+							width: req.viewport?.width ?? 900,
+							height: req.viewport?.height ?? 600,
+						},
+						remoteBrowserHost: req.remoteBrowserHost ?? undefined,
+						remoteBrowserEnabled: req.remoteBrowserEnabled ?? false,
+					}
+					await updateGlobalState(this.context, "browserSettings", newSettings)
+					await this.controller?.postStateToWebview() // Notify webview of changes
+					Logger.info(`[GrpcBridge] Updated browser settings.`)
+					callback(null, { value: true })
+				} catch (error: any) {
+					Logger.error(`[GrpcBridge:updateBrowserSettings] Error: ${error.message}`)
+					callback({ code: grpc.status.INTERNAL, details: error.message }, null)
+				}
+			},
 		}
 	}
 	private createCheckpointsImplementation(): grpc.UntypedServiceImplementation {
@@ -883,12 +979,49 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 				Logger.warn("[GrpcBridge:handleUpdateSettings] Received request without apiConfiguration field.")
 			}
 
-			// Handle chat settings update (if needed, currently warns)
+			// Handle chat settings update
 			if (settings.chatSettings) {
-				Logger.warn("[GrpcBridge] Chat Settings update via gRPC UpdateSettings not fully implemented.")
-				// TODO: Map chatSettings proto to internal ChatSettings and persist if needed
-				// const internalChatSettings = mapProtoChatSettingsToInternal(settings.chatSettings);
-				// await updateGlobalState(this.context, "chatSettings", internalChatSettings);
+				const protoChatSettings = settings.chatSettings as taskControlPb.ChatSettings // Cast for type safety
+				const internalChatSettingsUpdate: Partial<ChatSettings> = {}
+
+				switch (protoChatSettings.mode) {
+					case taskControlPb.ChatMode.PLAN:
+						internalChatSettingsUpdate.mode = "plan"
+						break
+					case taskControlPb.ChatMode.ACT:
+						internalChatSettingsUpdate.mode = "act"
+						break
+					case taskControlPb.ChatMode.CHAT_MODE_UNSPECIFIED:
+						// Do nothing or log a warning if unspecified is not expected
+						Logger.info(
+							"[GrpcBridge:handleUpdateSettings] Received CHAT_MODE_UNSPECIFIED for chatSettings.mode. No update applied for mode.",
+						)
+						break
+					default:
+						Logger.warn(`[GrpcBridge:handleUpdateSettings] Unknown ChatMode enum value: ${protoChatSettings.mode}`)
+						break
+				}
+
+				if (internalChatSettingsUpdate.mode) {
+					Logger.info(
+						`[GrpcBridge:handleUpdateSettings] Persisting ChatSettings update: ${JSON.stringify(internalChatSettingsUpdate)}`,
+					)
+					// Assuming ChatSettings are stored under a specific key in global state, e.g., "chatSettings"
+					// Adjust the key if it's different or part of a larger settings object.
+					const currentChatSettings = (await getAllExtensionState(this.context)).chatSettings || {}
+					const newChatSettings = { ...currentChatSettings, ...internalChatSettingsUpdate }
+					await updateGlobalState(this.context, "chatSettings", newChatSettings)
+					Logger.info(`[GrpcBridge:handleUpdateSettings] ChatSettings updated in global state.`)
+
+					// If the controller has a direct way to update its chat mode, call it.
+					// Otherwise, postStateToWebview will eventually update it.
+					if (this.controller && internalChatSettingsUpdate.mode) {
+						// This assumes controller might have a method like this, or it's handled by general state update
+						// For now, relying on postStateToWebview to propagate the change.
+						// If a more direct update method exists in Controller, it could be called here.
+						// e.g., await this.controller.setChatMode(internalChatSettingsUpdate.mode);
+					}
+				}
 			}
 
 			// Refresh state in webview after updates
@@ -910,9 +1043,12 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			Logger.info(`[GrpcBridge] Forwarding ask response to task ${task.taskId}`) // Use static Logger
 			task.handleWebviewAskResponse(response.askResponse!, response.text, response.images)
 		} else {
-			if (!task) Logger.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleAskResponse`) // Use static Logger
-			if (response.type !== "askResponse")
-				Logger.warn(`[GrpcBridge] Received non-askResponse message in handleAskResponse: ${response.type}`) // Use static Logger
+			if (!task) {
+				Logger.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleAskResponse`)
+			} // Use static Logger
+			if (response.type !== "askResponse") {
+				Logger.warn(`[GrpcBridge] Received non-askResponse message in handleAskResponse: ${response.type}`)
+			} // Use static Logger
 		}
 	}
 
@@ -1117,20 +1253,28 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 									// Determine if it's an 'ask' or 'say' based on internal ClineMessage structure
 									if (extMsg.partialMessage.type === "say") {
 										const sayPayload = extMsg.partialMessage
-										const logText =
-											sayPayload.text && sayPayload.text.length < 100
-												? `"${sayPayload.text.replace(/\n/g, "\\n")}"`
-												: `(length: ${sayPayload.text?.length})`
-										Logger.info(
-											`[WRAPPER_TRACE] GRPC_ROUTE: Emitting sayUpdate for client ${clientId} (taskId: ${taskId}, type: ${sayPayload.say}, partial: ${sayPayload.partial}, text: ${logText}).`,
-										)
-										this.grpcNotifier.emit(
-											"sayUpdate", // This should trigger call.write in StartTask
-											clientId,
-											protoClineMsg,
-											extMsg.partialMessage.partial ?? false,
-										)
-										successfullySentToGrpc = true
+										if (sayPayload.say === "error" && sayPayload.text) {
+											Logger.warn(
+												`[WRAPPER_TRACE] GRPC_ROUTE: Intercepted SAY_ERROR for client ${clientId}: ${sayPayload.text}`,
+											)
+											this.grpcNotifier.emit("error", clientId, sayPayload.text)
+											successfullySentToGrpc = true
+										} else {
+											const logText =
+												sayPayload.text && sayPayload.text.length < 100
+													? `"${sayPayload.text.replace(/\n/g, "\\n")}"`
+													: `(length: ${sayPayload.text?.length})`
+											Logger.info(
+												`[WRAPPER_TRACE] GRPC_ROUTE: Emitting sayUpdate for client ${clientId} (taskId: ${taskId}, type: ${sayPayload.say}, partial: ${sayPayload.partial}, text: ${logText}).`,
+											)
+											this.grpcNotifier.emit(
+												"sayUpdate", // This should trigger call.write in StartTask
+												clientId,
+												protoClineMsg,
+												extMsg.partialMessage.partial ?? false,
+											)
+											successfullySentToGrpc = true
+										}
 									} else if (extMsg.partialMessage.type === "ask" && extMsg.partialMessage.ask) {
 										Logger.info(
 											`[WRAPPER_TRACE] GRPC_ROUTE: Emitting askRequest for client ${clientId} (type: ${extMsg.partialMessage.ask}).`,
@@ -1202,7 +1346,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	}
 
 	private findClientIdByTaskId(taskId: string | undefined): string | undefined {
-		if (!taskId) return undefined
+		if (!taskId) {
+			return undefined
+		}
 		for (const [clientId, task] of this.clientTaskMap.entries()) {
 			if (task.taskId === taskId) {
 				return clientId

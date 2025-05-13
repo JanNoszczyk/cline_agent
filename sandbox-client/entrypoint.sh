@@ -39,8 +39,30 @@ cleanup() {
         kill $VSCODE_SERVER_PID 2>/dev/null || true
     fi
     if [ -n "$PUPPETEER_SCRIPT_PID" ]; then
-        echo "Stopping Puppeteer Script (PID ${PUPPETEER_SCRIPT_PID})..."
-        kill $PUPPETEER_SCRIPT_PID 2>/dev/null || true
+        echo "Attempting graceful shutdown of Puppeteer Script (PID ${PUPPETEER_SCRIPT_PID})..."
+        kill $PUPPETEER_SCRIPT_PID 2>/dev/null # Send SIGTERM
+        
+        # Wait a few seconds for it to shut down gracefully
+        echo "Waiting up to 5 seconds for Puppeteer script to exit gracefully..."
+        for i in $(seq 1 5); do
+            if ! ps -p $PUPPETEER_SCRIPT_PID > /dev/null; then
+                echo "Puppeteer script exited gracefully."
+                PUPPETEER_SCRIPT_PID="" # Clear PID as it's gone
+                break
+            fi
+            sleep 1
+        done
+
+        # If still running, force kill
+        if [ -n "$PUPPETEER_SCRIPT_PID" ]; then
+            echo "Puppeteer script did not exit gracefully after 5s. Sending SIGTERM again (PID ${PUPPETEER_SCRIPT_PID})..."
+            kill $PUPPETEER_SCRIPT_PID 2>/dev/null || true # SIGTERM again
+            sleep 1 # Brief pause
+            if ps -p $PUPPETEER_SCRIPT_PID > /dev/null; then
+                echo "Puppeteer script still running after second SIGTERM. Sending SIGKILL (PID ${PUPPETEER_SCRIPT_PID})..."
+                kill -9 $PUPPETEER_SCRIPT_PID 2>/dev/null || true
+            fi
+        fi
     fi
     if [ -n "$GO_CLIENT_PID" ]; then
         echo "Stopping Go Client (PID ${GO_CLIENT_PID})..."
@@ -90,7 +112,7 @@ echo "Starting OpenVSCode Server on port ${VSCODE_INTERNAL_PORT}..."
   --extensions-dir /home/openvscode-server/.openvscode-server/extensions \
   --user-data-dir /home/openvscode-server/.openvscode-server/data \
   --without-connection-token \
-  --log=trace \
+  --log=debug \
   --default-folder=/home/workspace \
   > "${VSCODE_LOG_FILE}" 2>&1 &
 VSCODE_SERVER_PID=$!
@@ -225,14 +247,14 @@ echo "Setting PLAYWRIGHT_BROWSERS_PATH to ${PLAYWRIGHT_BROWSERS_PATH}"
 if true; then # <<< Force this condition to always be true
   echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in TEST mode (background for debugging)..."
   # Run in background to allow script to continue to 'wait $VSCODE_SERVER_PID'
-  # Redirect Go client output to its log file
-  /final-app/sandbox-binary -test > "${GO_CLIENT_LOG_FILE}" 2>&1 &
+  # Redirect Go client output to its log file AND to stdout/stderr of this script
+  /final-app/sandbox-binary -test 2>&1 | tee "${GO_CLIENT_LOG_FILE}" &
 else
   # This block will now never be reached
   echo "Starting Go gRPC sandbox client (/final-app/sandbox-binary) in default mode..."
-  /final-app/sandbox-binary > "${GO_CLIENT_LOG_FILE}" 2>&1 &
+  /final-app/sandbox-binary 2>&1 | tee "${GO_CLIENT_LOG_FILE}" &
 fi
-GO_CLIENT_PID=$! # This will be the PID of the backgrounded Go client
+GO_CLIENT_PID=$! # This will be the PID of the backgrounded Go client (or the tee process, which is fine)
 echo "Go client started in background with PID ${GO_CLIENT_PID}, logs will go to ${GO_CLIENT_LOG_FILE}"
 
 # Keep the container running by waiting for the primary VS Code server process

@@ -1879,6 +1879,8 @@ export class Task {
 					// 	content: await this.formatToolError(errorString),
 					// })
 					pushToolResult(formatResponse.toolError(errorString))
+					// Abort the task after handling the error
+					await this.abortTask()
 				}
 
 				// If block is partial, remove partial closing tag so its not presented to user

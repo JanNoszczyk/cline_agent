@@ -53,11 +53,13 @@ export const toolParamNames = [
 	"response",
 	"result",
 	"context",
+	"tool_use_id", // Added for extracting the tool call ID
 ] as const
 
 export type ToolParamName = (typeof toolParamNames)[number]
 
 export interface ToolUse {
+	id: string // Added: The unique identifier for this specific tool invocation
 	type: "tool_use"
 	name: ToolUseName
 	// params is a partial record, allowing only some or none of the possible parameters to be used
