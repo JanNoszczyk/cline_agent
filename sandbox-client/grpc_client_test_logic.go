@@ -6,11 +6,10 @@ import (
 	"io" // Import io for EOF check
 	"log"
 	"os"
-	"strings" // Import strings for error message checking
 	"time"
 
 	// Corrected import paths using the module name 'sandboxclient'
-	browserpb "sandboxclient/genproto/browser"
+	// browserpb "sandboxclient/genproto/browser" // Removed as BrowserService tests are commented out
 	checkpointspb "sandboxclient/genproto/checkpoints"
 	pb "sandboxclient/genproto/common"
 	mcppb "sandboxclient/genproto/mcp"
@@ -250,6 +249,34 @@ func logMessageSummary(messages []*tpb.ExtensionMessage) {
 				log.Printf("  Payload: TEXT_MESSAGE (ClineMessage) - TypeInCline: %s, IsPartial: %t, Text (len %d): %s",
 					cm.GetType(), cm.GetPartial(), len(cm.GetText()), cm.GetText())
 			}
+		case *tpb.ExtensionMessage_NewChatMessage: // <<< ADDED CASE for NewChatMessage
+			if payload.NewChatMessage != nil {
+				cm := payload.NewChatMessage
+				log.Printf("  Payload: NEW_CHAT_MESSAGE (ClineMessage)")
+				log.Printf("    TS: %d", cm.GetTs())
+				log.Printf("    TypeInCline: %s", cm.GetType()) // "ask" or "say"
+				log.Printf("    Text (raw): %s", cm.GetText())
+				log.Printf("    Reasoning: %s", cm.GetReasoning())
+				log.Printf("    Images Count: %d", len(cm.GetImages()))
+				log.Printf("    Partial: %t", cm.GetPartial()) // Should always be false for NewChatMessage
+				log.Printf("    LastCheckpointHash: %s", cm.GetLastCheckpointHash())
+				log.Printf("    IsCheckpointCheckedOut: %t", cm.GetIsCheckpointCheckedOut())
+				log.Printf("    IsOperationOutsideWorkspace: %t", cm.GetIsOperationOutsideWorkspace())
+				log.Printf("    ConversationHistoryIndex: %d", cm.GetConversationHistoryIndex())
+				if cdr := cm.GetConversationHistoryDeletedRange(); cdr != nil {
+					log.Printf("    ConversationHistoryDeletedRange: Start=%d, End=%d", cdr.GetStartIndex(), cdr.GetEndIndex())
+				}
+				// Log Ask Payload
+				if askP := cm.GetAskPayload(); askP != nil {
+					log.Printf("    AskType (Enum): %s", cm.GetAskType())
+					// Detailed AskPayload logging can be duplicated/refactored from PARTIAL_MESSAGE if needed
+				}
+				// Log Say Payload
+				if sayP := cm.GetSayPayload(); sayP != nil {
+					log.Printf("    SayType (Enum): %s", cm.GetSayType())
+					// Detailed SayPayload logging can be duplicated/refactored from PARTIAL_MESSAGE if needed
+				}
+			}
 		case *tpb.ExtensionMessage_ToolUse:
 			if payload.ToolUse != nil {
 				tu := payload.ToolUse
@@ -284,8 +311,9 @@ const (
 	clientID    = "go-test-client-123" // <<< Define Client ID
 )
 
-var anthropicApiKey string // Will be loaded from environment variable
-var openAiApiKey string    // Placeholder for OpenAI key
+var anthropicApiKey string  // Will be loaded from environment variable
+var openAiApiKey string     // Placeholder for OpenAI key
+var anthropicModelId string // Will store the Anthropic model ID
 
 func init() {
 	// Load Anthropic API Key from environment variable
@@ -293,6 +321,14 @@ func init() {
 	if anthropicApiKey == "" {
 		log.Println("Warning: ANTHROPIC_API_KEY environment variable not set. Some tests might rely on it.")
 	}
+	// Load Anthropic Model ID from environment variable
+	anthropicModelId = os.Getenv("ANTHROPIC_MODEL")
+	if anthropicModelId == "" {
+		log.Println("Warning: ANTHROPIC_MODEL environment variable not set. Using default or tests might fail.")
+		// Optionally set a default if ANTHROPIC_MODEL is not found, e.g.:
+		// anthropicModelId = "claude-3-opus-20240229"
+	}
+
 	// For OpenAI, we can use a placeholder or the same key if the test doesn't actually hit the API
 	openAiApiKey = os.Getenv("OPENAI_API_KEY")
 	if openAiApiKey == "" {
@@ -318,7 +354,7 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 	// --- Create Clients for Actual Services ---
 	// Use specific proto aliases for clarity
-	browserClient := browserpb.NewBrowserServiceClient(conn)
+	// browserClient := browserpb.NewBrowserServiceClient(conn) // Commented out as BrowserService tests are removed
 	checkpointsClient := checkpointspb.NewCheckpointsServiceClient(conn)
 	mcpClient := mcppb.NewMcpServiceClient(conn)
 	taskControlClient := tpb.NewTaskControlServiceClient(conn)                 // <<< Use tpb alias
@@ -338,15 +374,13 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 	// --- Test 0: Update API Settings via gRPC ---
 	log.Println("[gRPC-Debug: GoClient:runGrpcTest] Preparing UpdateSettings request...")
-	apiProviderOpenAI := tpb.ApiProvider_OPENAI // Change provider
+	apiProviderAnthropic := tpb.ApiProvider_ANTHROPIC // Use Anthropic provider
 	chatModePlan := tpb.ChatMode_PLAN
 	settingsReq := &tpb.UpdateSettingsRequest{
 		ApiConfiguration: &tpb.ApiConfiguration{
-			ApiProvider: &apiProviderOpenAI,
-			ApiModelId:  stringPtr("gpt-4-turbo-preview"), // Example OpenAI model
-			ApiKey:      stringPtr(openAiApiKey),          // Use placeholder or actual key
-			// Add more ApiConfiguration fields if needed for testing
-			FavoritedModelIds: []string{"gpt-4-turbo-preview", "claude-3-opus-20240229"},
+			ApiProvider: &apiProviderAnthropic,
+			ApiModelId:  stringPtr(anthropicModelId), // Use ANTHROPIC_MODEL from env
+			ApiKey:      stringPtr(anthropicApiKey),  // Use ANTHROPIC_API_KEY from env
 		},
 		ChatSettings: &tpb.ChatSettings{ // Add ChatSettings
 			Mode: chatModePlan,
@@ -438,46 +472,46 @@ func runGrpcTest(conn *grpc.ClientConn) {
 	}
 	// --- Settings Update Complete ---
 
-	// --- Test 1: Call BrowserService.getBrowserConnectionInfo ---
-	log.Println("Calling BrowserService.getBrowserConnectionInfo...")
-	infoReq := &pb.EmptyRequest{} // <<< Use pb alias
-	// <<< Use ctxWithMetadata
-	infoResp, err := browserClient.GetBrowserConnectionInfo(ctxWithMetadata, infoReq)
+	// --- Test 1: Call BrowserService.getBrowserConnectionInfo (COMMENTED OUT AS PER USER REQUEST) ---
+	// log.Println("Calling BrowserService.getBrowserConnectionInfo...")
+	// infoReq := &pb.EmptyRequest{} // <<< Use pb alias
+	// // <<< Use ctxWithMetadata
+	// infoResp, err := browserClient.GetBrowserConnectionInfo(ctxWithMetadata, infoReq)
 
-	expectedErrMsg := "Browser session is not available"
-	if err != nil {
-		st, ok := status.FromError(err)
-		if ok && st.Code() == codes.Unauthenticated {
-			log.Printf("Error: Received Unauthenticated from getBrowserConnectionInfo: %v", err)
-			log.Println("gRPC Test Client finished with errors.")
-			logMessageSummary(allReceivedMessages)
-			os.Exit(1)
-		} else if ok && st.Code() == codes.Unimplemented {
-			log.Printf("Info: getBrowserConnectionInfo is Unimplemented on the server: %v", err)
-			// This is acceptable if the service/method is not yet implemented.
-		} else if ok && st.Code() == codes.Internal && strings.Contains(st.Message(), expectedErrMsg) {
-			log.Printf("Successfully received expected error for getBrowserConnectionInfo: %v", err)
-			// This is the expected behavior when no browser session is active, so continue the test.
-		} else {
-			// Unexpected error - Log it but don't exit, allow other tests to run
-			log.Printf("Warning: Unexpected error calling getBrowserConnectionInfo (continuing test): %v", err)
-		}
-	} else {
-		// If there was NO error, log the received info (unexpected success in this test context)
-		// Depending on test requirements, this might also be considered a failure.
-		log.Printf("Warning: getBrowserConnectionInfo succeeded unexpectedly (expected error '%s').", expectedErrMsg)
-		log.Printf("Received Browser Connection Info:")
-		log.Printf("  Is Connected: %t", infoResp.GetIsConnected())
-		log.Printf("  Is Remote: %t", infoResp.GetIsRemote())
-		if infoResp.Host != nil {
-			log.Printf("  Host: %s", infoResp.GetHost())
-		} else {
-			log.Printf("  Host: (not set)")
-		}
-		// Decide if unexpected success should halt the test
-		// log.Println("Halting test due to unexpected success in getBrowserConnectionInfo.")
-		// os.Exit(1)
-	}
+	// expectedErrMsg := "Browser session is not available"
+	// if err != nil {
+	// 	st, ok := status.FromError(err)
+	// 	if ok && st.Code() == codes.Unauthenticated {
+	// 		log.Printf("Error: Received Unauthenticated from getBrowserConnectionInfo: %v", err)
+	// 		log.Println("gRPC Test Client finished with errors.")
+	// 		logMessageSummary(allReceivedMessages)
+	// 		os.Exit(1)
+	// 	} else if ok && st.Code() == codes.Unimplemented {
+	// 		log.Printf("Info: getBrowserConnectionInfo is Unimplemented on the server: %v", err)
+	// 		// This is acceptable if the service/method is not yet implemented.
+	// 	} else if ok && st.Code() == codes.Internal && strings.Contains(st.Message(), expectedErrMsg) {
+	// 		log.Printf("Successfully received expected error for getBrowserConnectionInfo: %v", err)
+	// 		// This is the expected behavior when no browser session is active, so continue the test.
+	// 	} else {
+	// 		// Unexpected error - Log it but don't exit, allow other tests to run
+	// 		log.Printf("Warning: Unexpected error calling getBrowserConnectionInfo (continuing test): %v", err)
+	// 	}
+	// } else {
+	// 	// If there was NO error, log the received info (unexpected success in this test context)
+	// 	// Depending on test requirements, this might also be considered a failure.
+	// 	log.Printf("Warning: getBrowserConnectionInfo succeeded unexpectedly (expected error '%s').", expectedErrMsg)
+	// 	log.Printf("Received Browser Connection Info:")
+	// 	log.Printf("  Is Connected: %t", infoResp.GetIsConnected())
+	// 	log.Printf("  Is Remote: %t", infoResp.GetIsRemote())
+	// 	if infoResp.Host != nil {
+	// 		log.Printf("  Host: %s", infoResp.GetHost())
+	// 	} else {
+	// 		log.Printf("  Host: (not set)")
+	// 	}
+	// 	// Decide if unexpected success should halt the test
+	// 	// log.Println("Halting test due to unexpected success in getBrowserConnectionInfo.")
+	// 	// os.Exit(1)
+	// }
 
 	// --- Test 2: Call CheckpointsService.checkpointDiff (Example) ---
 	// Note: This expects Int64Request based on checkpoints.proto
@@ -538,7 +572,7 @@ func runGrpcTest(conn *grpc.ClientConn) {
 
 	// --- Test 4: Start Task and Send/Receive Messages ---
 	log.Println("[gRPC-Debug: GoClient:runGrpcTest] Preparing initial NewTask message...")
-	initialMessage := "whats 2+2"
+	initialMessage := "whats 2+2" // This will trigger a plan_mode_respond from the AI if in PLAN mode
 	startTaskReqPayload := &tpb.NewTaskRequest{
 		Text: stringPtr(initialMessage),
 		ChatContent: &tpb.ChatContent{ // Add ChatContent with an image
@@ -618,89 +652,9 @@ func runGrpcTest(conn *grpc.ClientConn) {
 		}
 		log.Printf("[gRPC-Info: GoClient:runGrpcTest] Proceeding with TaskID: %s (Version: %s)", receivedTaskID, receivedVersion)
 
-		// --- Send Follow-up Messages using SendUserInput RPC ---
-		log.Printf("Sending follow-up message via SendUserInput RPC for TaskID %s...", receivedTaskID)
-		followUpMessage := "who was the us president in 2020?"
-		invokeReqPayload := &tpb.InvokeRequest{ // This is the payload for the user input <<< Use tpb alias
-			Text: stringPtr(followUpMessage),
-			// Images can be omitted
-		}
-		// Note: SendUserInput expects InvokeRequest directly, not wrapped in ClientMessage
-		log.Printf("[gRPC-Debug: GoClient:runGrpcTest] Calling taskControlClient.SendUserInput with: %+v", invokeReqPayload)
-		// <<< Use ctxWithMetadata
-		inputStream, err := taskControlClient.SendUserInput(ctxWithMetadata, invokeReqPayload) // Call SendUserInput with InvokeRequest
-		if err != nil {
-			// <<< Check for Unauthenticated error first
-			st, ok := status.FromError(err)
-			if ok && st.Code() == codes.Unauthenticated {
-				log.Printf("Error: Received Unauthenticated from SendUserInput: %v", err)
-				log.Println("gRPC Test Client finished with errors.")
-				logMessageSummary(allReceivedMessages)
-				os.Exit(1)
-			}
-			log.Printf("[gRPC-Error: GoClient:runGrpcTest] Error calling SendUserInput: %v", err)
-			// Log error but don't exit immediately
-			// os.Exit(1) // Removed exit call
-			log.Println("[gRPC-Warn: GoClient:runGrpcTest] Continuing test despite SendUserInput error...")
-		} else {
-			log.Println("[gRPC-Info: GoClient:runGrpcTest] SendUserInput call successful, receiving stream opened.")
-		}
-
-		// Only proceed with receiving if SendUserInput didn't error out initially
-		if err == nil {
-			// The SendUserInput stream is typically closed by the server immediately after processing the input.
-			// The client should not expect to receive ongoing messages on this specific stream.
-			// Responses from the AI will come through the main StartTask stream.
-			// We can, however, wait for the stream to close to confirm the server received it.
-			log.Println("[gRPC-Debug: GoClient:runGrpcTest] Waiting for SendUserInput stream to close...")
-			_, recvErr := inputStream.Recv() // Attempt one Recv to get EOF or an unexpected error
-			if recvErr == io.EOF {
-				log.Println("[gRPC-Info: GoClient:runGrpcTest] SendUserInput stream closed by server (EOF), input likely processed.")
-			} else if recvErr != nil {
-				log.Printf("[gRPC-Warn: GoClient:runGrpcTest] Error/unexpected message on SendUserInput stream after sending: %v", recvErr)
-			} else {
-				log.Println("[gRPC-Warn: GoClient:runGrpcTest] Received unexpected message on SendUserInput stream. Expected EOF.")
-			}
-		} // End of 'if err == nil' for SendUserInput
-
-		// --- Second Follow-up Message ---
-		log.Printf("Sending SECOND follow-up message via SendUserInput RPC for TaskID %s...", receivedTaskID)
-		secondFollowUpMessage := "and what year was he born?"
-		secondInvokeReqPayload := &tpb.InvokeRequest{
-			Text: stringPtr(secondFollowUpMessage),
-		}
-		log.Printf("[gRPC-Debug: GoClient:runGrpcTest] Calling taskControlClient.SendUserInput (2nd time) with: %+v", secondInvokeReqPayload)
-		secondInputStream, err := taskControlClient.SendUserInput(ctxWithMetadata, secondInvokeReqPayload) // Use ctxWithMetadata
-		if err != nil {
-			st, ok := status.FromError(err)
-			if ok && st.Code() == codes.Unauthenticated {
-				log.Printf("Error: Received Unauthenticated from SendUserInput (2nd time): %v", err)
-				log.Println("gRPC Test Client finished with errors.")
-				logMessageSummary(allReceivedMessages)
-				os.Exit(1)
-			}
-			log.Printf("[gRPC-Error: GoClient:runGrpcTest] Error calling SendUserInput (2nd time): %v", err)
-			log.Println("[gRPC-Warn: GoClient:runGrpcTest] Continuing test despite second SendUserInput error...")
-		} else {
-			log.Println("[gRPC-Info: GoClient:runGrpcTest] Second SendUserInput call successful, receiving stream opened.")
-		}
-
-		// Only proceed if the second call didn't error
-		if err == nil {
-			// Similar to the first SendUserInput, wait for this stream to close.
-			log.Println("[gRPC-Debug: GoClient:runGrpcTest] Waiting for second SendUserInput stream to close...")
-			_, recvErr := secondInputStream.Recv()
-			if recvErr == io.EOF {
-				log.Println("[gRPC-Info: GoClient:runGrpcTest] Second SendUserInput stream closed by server (EOF), input likely processed.")
-			} else if recvErr != nil {
-				log.Printf("[gRPC-Warn: GoClient:runGrpcTest] Error/unexpected message on second SendUserInput stream after sending: %v", recvErr)
-			} else {
-				log.Println("[gRPC-Warn: GoClient:runGrpcTest] Received unexpected message on second SendUserInput stream. Expected EOF.")
-			}
-		} // End of 'if err == nil' for second SendUserInput
-
 		// --- Simplified Direct Receiving Loop (Standard For Loop) ---
 		log.Println("[gRPC-Info: GoClient:runGrpcTest] Entering standard 'for' loop to receive subsequent messages from StartTask stream...")
+		var followUpQuerySent bool = false // True after the client sends its "what's next.js?" query
 	receiveLoop: // Label for the loop
 		for {
 			// Check if the overall context is done before blocking on Recv()
@@ -721,60 +675,134 @@ func runGrpcTest(conn *grpc.ClientConn) {
 				if err == io.EOF {
 					log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] StartTask Stream finished (EOF).")
 				} else {
-					// Attempt to get gRPC status from the error
 					s, ok := status.FromError(err)
 					if ok {
-						// It's a gRPC error
 						log.Printf("[gRPC-Error: GoClient:runGrpcTest:ForRecvLoop] Error receiving from StartTask stream. Code: %s, Message: %s", s.Code(), s.Message())
 					} else {
-						// Not a gRPC error (e.g., network issue before gRPC status is formed, or other client-side issue)
 						log.Printf("[gRPC-Error: GoClient:runGrpcTest:ForRecvLoop] Non-gRPC error receiving from StartTask stream: %v", err)
 					}
 				}
 				break receiveLoop // Exit loop on any error (including EOF)
 			}
 
-			// Process the received message
 			if resp != nil {
 				log.Printf("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received message on StartTask stream: Type=%s", resp.GetType())
 				allReceivedMessages = append(allReceivedMessages, resp) // Store message
 
-				// --- Check for Task Completion Message ---
-				if resp.GetType() == tpb.ExtensionMessageType_PARTIAL_MESSAGE {
-					clineMsg := resp.GetPartialMessage() // clineMsg is *tpb.ClineMessage
-					if clineMsg != nil && !clineMsg.GetPartial() && clineMsg.GetSayType() == tpb.ClineSayType_SAY_COMPLETION_RESULT {
-						log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received final completion message (PARTIAL_MESSAGE, partial=false, say_type=SAY_COMPLETION_RESULT). Breaking loop.")
-						break receiveLoop // Exit loop gracefully on completion message
+				var clineMsg *tpb.ClineMessage
+				var isCompleteMessage bool // Initialize isCompleteMessage
+
+				switch p := resp.Payload.(type) {
+				case *tpb.ExtensionMessage_PartialMessage:
+					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:ForRecvLoop] Processing PARTIAL_MESSAGE payload.")
+					if p.PartialMessage != nil {
+						clineMsg = p.PartialMessage
+						isCompleteMessage = !clineMsg.GetPartial()
+					} else {
+						log.Printf("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] PartialMessage payload is nil.")
 					}
+				case *tpb.ExtensionMessage_NewChatMessage:
+					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:ForRecvLoop] Processing NEW_CHAT_MESSAGE payload.")
+					if p.NewChatMessage != nil {
+						clineMsg = p.NewChatMessage
+						isCompleteMessage = true // NewChatMessage is always complete
+						if clineMsg.GetPartial() {
+							log.Printf("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] NewChatMessage received with Partial=true. This is unexpected. TS: %d", clineMsg.GetTs())
+						}
+					} else {
+						log.Printf("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] NewChatMessage payload is nil.")
+					}
+				case *tpb.ExtensionMessage_State:
+					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:ForRecvLoop] Received STATE update. Logging and continuing.")
+					// State updates are usually for context, main interaction logic is with ClineMessage
+					// No clineMsg or isCompleteMessage to set here for the main logic flow
+				default:
+					log.Printf("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] Received unhandled payload type: %T", p)
+					// No clineMsg or isCompleteMessage to set here
 				}
-				// --- End Task Completion Check ---
+
+				if clineMsg != nil { // Check if clineMsg was successfully assigned
+					if isCompleteMessage {
+						log.Printf("[gRPC-Debug: GoClient:runGrpcTest:ForRecvLoop] Processing complete ClineMessage (Type: %s, AskType: %s, SayType: %s, Text: %s)", clineMsg.GetType(), clineMsg.GetAskType(), clineMsg.GetSayType(), clineMsg.GetText())
+
+						if clineMsg.GetType() == tpb.ClineMessage_ASK {
+							if !followUpQuerySent {
+								log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] AI sent its first ASK (response to initial task). Responding with follow-up query...")
+								askResponseReq := &tpb.AskResponseRequest{
+									AskResponseType: tpb.AskResponseType_MESSAGE_RESPONSE,
+									Text:            stringPtr("what's next.js? Describe concisely."),
+								}
+								log.Printf("[gRPC-Debug: GoClient:runGrpcTest:ForRecvLoop] Calling taskControlClient.SubmitAskResponse with: %+v", askResponseReq)
+								submitAskStream, submitErr := taskControlClient.SubmitAskResponse(ctxWithMetadata, askResponseReq)
+								if submitErr != nil {
+									st, ok := status.FromError(submitErr)
+									if ok && st.Code() == codes.Unauthenticated {
+										log.Printf("[gRPC-Error: GoClient:runGrpcTest:ForRecvLoop] Received Unauthenticated from SubmitAskResponse: %v", submitErr)
+										log.Println("gRPC Test Client finished with errors.")
+										logMessageSummary(allReceivedMessages)
+										os.Exit(1)
+									}
+									log.Printf("[gRPC-Error: GoClient:runGrpcTest:ForRecvLoop] Error calling SubmitAskResponse: %v", submitErr)
+									// Optionally, break loop or exit if submitting ask response fails critically
+									break receiveLoop
+								} else {
+									log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] SubmitAskResponse call successful, stream opened. Draining stream...")
+									for {
+										_, ackErr := submitAskStream.Recv()
+										if ackErr == io.EOF {
+											log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] SubmitAskResponse stream closed by server (EOF). Response submitted.")
+											break
+										}
+										if ackErr != nil {
+											log.Printf("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] Error/unexpected message on SubmitAskResponse stream: %v", ackErr)
+											break
+										}
+										log.Println("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] Received unexpected message on SubmitAskResponse stream.")
+									}
+									followUpQuerySent = true
+									log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Follow-up query submitted. Continuing to listen for AI's response to this query.")
+								}
+							} else {
+								// This is the AI's ASK in response to our follow-up query.
+								log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received AI's ASK in response to the follow-up query. Concluding interaction cycle.")
+								break receiveLoop // Exit the loop
+							}
+						} else if clineMsg.GetType() == tpb.ClineMessage_SAY {
+							if followUpQuerySent {
+								log.Printf("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received SAY message after follow-up query was sent. Text: %s", clineMsg.GetText())
+							} else {
+								log.Printf("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received SAY message (likely part of initial task response). Text: %s", clineMsg.GetText())
+							}
+							// Check for overall task completion if it's a SAY
+							if clineMsg.GetSayType() == tpb.ClineSayType_SAY_COMPLETION_RESULT {
+								log.Println("[gRPC-Info: GoClient:runGrpcTest:ForRecvLoop] Received SAY_COMPLETION_RESULT. Breaking loop.")
+								break receiveLoop
+							}
+						}
+					} else { // This means it was a PartialMessage that is actually partial (and clineMsg is not nil)
+						log.Printf("[gRPC-Debug: GoClient:runGrpcTest:ForRecvLoop] Received PARTIAL ClineMessage update (Type: %s, Text: %s). Waiting for completion.", clineMsg.GetType(), clineMsg.GetText())
+					}
+				} else if resp.GetPayload() != nil && resp.GetType() != tpb.ExtensionMessageType_STATE && resp.GetType() != tpb.ExtensionMessageType_TASK_STARTED && resp.GetType() != tpb.ExtensionMessageType_DID_UPDATE_SETTINGS {
+					log.Printf("[gRPC-Debug: GoClient:runGrpcTest:ForRecvLoop] Payload type %T (Message Type: %s) did not yield a ClineMessage for main processing loop.", resp.GetPayload(), resp.GetType())
+				} else if resp.GetPayload() == nil && resp.GetType() != tpb.ExtensionMessageType_TASK_STARTED && resp.GetType() != tpb.ExtensionMessageType_DID_UPDATE_SETTINGS {
+					log.Printf("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] Received message type %s with nil payload and it's not a simple signal type.", resp.GetType())
+				}
 
 			} else {
-				// This case (nil response, nil error) should ideally not happen with Recv()
 				log.Println("[gRPC-Warn: GoClient:runGrpcTest:ForRecvLoop] Received nil response and nil error. Unexpected.")
 			}
-
-			// Loop continues if no error and not the completion message
 		}
-		// endLoop: // Label for goto statement - no longer needed with labeled break
 		log.Println("[gRPC-Info: GoClient:runGrpcTest] Exited 'for' receiving loop.")
 
-	} else {
-		// If StartTask failed initially, we can't proceed
+	} else { // This 'else' corresponds to 'if err == nil' after StartTask call
 		log.Println("[gRPC-Warn: GoClient:runGrpcTest] Skipping subsequent steps because StartTask failed.")
-		// Decide if we should exit here or let the test finish "successfully" despite the earlier error
 		log.Println("gRPC Test Client finished with errors (due to StartTask failure).")
 		logMessageSummary(allReceivedMessages)
-		os.Exit(1) // Exit here if StartTask failure means the test cannot meaningfully continue
+		os.Exit(1)
 	}
 
 	// --- Test finished ---
-	// No need to explicitly close server-streaming RPCs from client side. Context cancellation handles cleanup.
-
-	// --- Final Outcome ---
-	// Determine final exit code based on whether critical errors occurred (like failing to get TaskID)
-	// For now, let's assume if we got this far without a hard exit, it's "successful" in terms of running through
 	log.Println("gRPC Test Client finished (may have encountered non-fatal errors).")
 	logMessageSummary(allReceivedMessages)
-	os.Exit(0) // Exit successfully if no fatal errors forced an earlier exit
+	os.Exit(0)
 }

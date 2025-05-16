@@ -191,6 +191,7 @@ export type ClineSay =
 	| "command"
 	| "command_output"
 	| "tool"
+	| "tool_code" // Added tool_code here
 	| "shell_integration_warning"
 	| "browser_action_launch"
 	| "browser_action"

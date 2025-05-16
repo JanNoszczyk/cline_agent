@@ -28,9 +28,20 @@
     *   `ToolUse` interface in `src/core/assistant-message/index.ts` updated with `id: string`.
     *   `toolParamNames` in `src/core/assistant-message/index.ts` updated with `"tool_use_id"`.
     *   `parseAssistantMessage` in `src/core/assistant-message/parse-assistant-message.ts` updated to populate `ToolUse.id` from the `tool_use_id` parameter or assign a default.
-    *   Verification is **pending a full successful test run** due to the last test being interrupted.
-4.  **(Implementation) Expand Service Coverage:** Begin implementing and testing `BrowserService`.
-5.  **(Documentation) Update Memory Bank:** (This step)
+    *   Verification is **pending a full successful test run that includes tool usage by the AI**.
+4.  **(Refinement & Verification) gRPC Message Streaming & Go Client Logic:** **VERIFIED**
+    *   **`src/services/grpc/GrpcBridge.ts` Modification:**
+        *   Logic added to `postMessageToWebview` wrapper to intercept `partialMessage` types.
+        *   `grpcPartialMessageBuffer` accumulates these partials internally per task/timestamp.
+        *   Fully assembled messages are emitted via `newChatMessage` event on `grpcNotifier` (using `ExtensionMessage.new_chat_message` protobuf field).
+        *   Direct emission of `sayUpdate`/`askRequest` for gRPC clients from `partialMessage` case removed.
+    *   **`sandbox-client/grpc_client_test_logic.go` Modification:**
+        *   `receiveLoop` updated with `followUpQuerySent` flag for single follow-up.
+        *   Client now performs a single interaction cycle and then concludes.
+    *   **Verification:** E2E test run confirmed Go client's single interaction, reduced message count, and that the gRPC client *only* receives complete messages via `ExtensionMessage.new_chat_message`.
+5.  **(Documentation) Update Memory Bank:** (This step - In Progress)
+6.  **(Implementation) Expand Service Coverage:** Begin implementing and testing `BrowserService`.
+
 
 ## 3. Current Status
 *   **gRPC Server in Docker:** Stable and operational.
@@ -40,10 +51,11 @@
 *   **Protobuf/`webContentPb` errors in `webview-ui/src/services/grpc-client.ts` (compile-time):** Believed resolved.
 *   **gRPC Error Handling:** Initial refinements implemented.
 *   **`tool_use_id` Propagation:** Implementation changes are complete.
+*   **gRPC Message Streaming & Go Client Logic:** Refined logic in `GrpcBridge.ts` (partial message buffering, emitting only complete messages) and `grpc_client_test_logic.go` (single interaction cycle) **implemented and verified**.
 
 ## 4. Known Issues / Blockers
 *   **No current major blockers.**
-*   **Interrupted Test Run:** The most recent test run was interrupted, preventing full verification of the `tool_use_id` flow. This needs to be re-checked after the next set of changes.
+*   **`tool_use_id` Flow Verification:** The `tool_use_id` propagation still needs full verification in a test run where the AI actually uses a tool.
 *   **Lower Priority:**
     *   Full implementation and testing of `CheckpointsService`, `McpService`.
     *   Comprehensive verification of all type mappings in `mapper.ts` (beyond the currently active RPCs).

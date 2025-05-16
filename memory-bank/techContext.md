@@ -14,14 +14,14 @@
 *   **Node.js:** Extension host runtime.
 
 ## 3. Relevant Project Files
-*   **Protos:** `proto/*.proto` (esp. `task_control.proto`)
-*   **Proto Build:** `proto/build-proto.js`
-*   **Generated Protos:** `src/shared/proto/`
-*   **gRPC Server:** `src/services/grpc/server.ts`
-*   **Mapping (Cline <=> Proto):** `src/services/grpc/mapper.ts`
-*   **Core Logic:** `src/extension.ts`, `src/core/controller/index.ts`, `src/core/task/index.ts`, `src/core/webview/index.ts`
-*   **Bridge:** `src/services/grpc/GrpcBridge.ts`
-*   **Test Client:** `sandbox-client/` (Go)
+*   **Protos:** `proto/*.proto` (esp. `task_control.proto`, which now includes a `new_chat_message` field in `ExtensionMessage` for individual complete messages).
+*   **Proto Build:** `proto/build-proto.js` (executed via `npm run protos`).
+*   **Generated Protos:** `src/shared/proto/` (updated after proto changes).
+*   **gRPC Server:** `src/services/grpc/server.ts` (houses `GrpcNotifier` which is used by `GrpcBridge`).
+*   **Mapping (Cline <=> Proto):** `src/services/grpc/mapper.ts`.
+*   **Core Logic:** `src/extension.ts`, `src/core/controller/index.ts`, `src/core/task/index.ts`, `src/core/webview/index.ts`.
+*   **Bridge:** `src/services/grpc/GrpcBridge.ts` (contains the primary logic for intercepting `partialMessage` types for gRPC clients, buffering them in `grpcPartialMessageBuffer`, and emitting `newChatMessage` events for complete messages).
+*   **Test Client:** `sandbox-client/` (Go) (has been updated and verified to handle `new_chat_message` and perform a single interaction cycle).
 
 ## 4. Development & Build
 *   **Deps:** `package.json` (root, `proto/`). `npm install`.
@@ -49,6 +49,7 @@ The primary method for testing the gRPC integration and extension behavior in an
 ## 5. Constraints & Considerations
 *   Runs in VSCode extension host (either locally or within OpenVSCode Server in Docker).
 *   Async heavy (gRPC, VSCode API).
-*   Careful state management for gRPC client ID <-> `Task` mapping.
-*   Prefer non-invasive integration (wrappers/interceptors).
+*   Careful state management for gRPC client ID <-> `Task` mapping, and for `grpcPartialMessageBuffer` in `GrpcBridge.ts` to ensure complete messages are assembled before sending to gRPC clients.
+*   Prefer non-invasive integration (wrappers/interceptors), as demonstrated by modifying `GrpcBridge` primarily.
 *   Robust gRPC error handling.
+*   The Go gRPC client (`sandbox-client/grpc_client_test_logic.go`) has been updated and verified to handle the `new_chat_message` field and perform a single, non-looping interaction cycle.

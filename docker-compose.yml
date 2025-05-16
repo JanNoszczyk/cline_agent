@@ -14,6 +14,7 @@ services:
             # --- Core Sandbox Settings ---
             - USER_ID=default-user
             - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} # Passed to the environment for Cline extension (NEEDS TO BE SET in host or .env)
+            - ANTHROPIC_MODEL=${ANTHROPIC_MODEL} # Passed from host .env for Cline extension
             - PASSWORD=password # OpenVSCode Server authentication
             - CLINE_GRPC_PORT=${CLINE_GRPC_PORT:-50051} # Port Go client uses to connect to Cline (must match Cline setting)
             # CLINE_GRPC_HOST is no longer needed as communication is intra-container to localhost

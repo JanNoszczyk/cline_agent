@@ -31,7 +31,7 @@ import {
 import * as taskControlPb from "../../shared/proto/task_control" // Namespace import
 import * as browserPb from "../../shared/proto/browser" // Import browser proto messages
 import * as commonPb from "../../shared/proto/common" // Import common proto messages
-import { ExtensionMessage, ClineMessage } from "../../shared/ExtensionMessage" // Import ExtensionMessage for type checking
+import { ExtensionMessage, ClineMessage, ClineSay, ClineAsk } from "../../shared/ExtensionMessage" // Import ExtensionMessage for type checking
 import { ToolResponse } from "../../core/task" // Import internal tool types from index
 import { ToolUse } from "@core/assistant-message" // Import ToolUse type
 import { mapProtoToolResultToInternal, mapMcpServersToProto } from "./mapper" // Import the new mapper & MCP mapper
@@ -79,6 +79,8 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	private controller: Controller | undefined // Reference to the main Controller instance
 	private grpcNotifier: GrpcNotifier | null = null // Corrected type: GrpcTaskNotifier -> GrpcNotifier
 	private clientTaskMap = new Map<string, Task>() // Map external clientId to internal Task instance
+	private readonly sentMessagesTracker = new Map<string, Set<string>>() // Tracks sent messages {taskId -> Set<message.ts>}
+	private grpcPartialMessageBuffer = new Map<string, Map<string, ClineMessage>>() // taskId -> messageTs -> assembled ClineMessage
 	private disposables: vscode.Disposable[] = []
 
 	private originalPostMessage?: PostMessageFunc // Store original using the updated type
@@ -149,21 +151,23 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	private createTaskControlImplementation(): grpc.UntypedServiceImplementation {
 		// Map TaskControlService methods to GrpcBridge callbacks
 		return {
+			// Method names are camelCase, matching gRPC-JS conventions for service implementation objects.
+			// Signatures match proto definitions (unary vs. server-streaming).
+
 			startTask: (call: grpc.ServerWritableStream<taskControlPb.NewTaskRequest, taskControlPb.ExtensionMessage>) => {
-				// Changed from StartTask to startTask
+				console.log("[RAW_CONSOLE_LOG GrpcBridge:startTask] Method invoked.") // RAW CONSOLE LOG
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
+				console.log(`[RAW_CONSOLE_LOG GrpcBridge:startTask] Client ID from metadata: ${clientId}`) // RAW CONSOLE LOG
 				if (!clientId) {
-					Logger.error("[GrpcBridge:StartTask] Client ID missing in metadata")
+					Logger.error("[GrpcBridge:startTask] Client ID missing in metadata")
+					console.error("[RAW_CONSOLE_LOG GrpcBridge:startTask] Client ID missing in metadata") // RAW CONSOLE LOG
 					call.emit("error", { code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
-					if (!call.writableEnded) {
-						call.end()
-					}
+					if (!call.writableEnded) call.end()
 					return
 				}
-
 				const initialRequest = call.request
 				Logger.info(
-					`[GrpcBridge:StartTask] Received for client ${clientId}. Text: ${initialRequest.text?.substring(0, 50)}...`,
+					`[GrpcBridge:startTask] Received for client ${clientId}. Text: ${initialRequest.text?.substring(0, 50)}...`,
 				)
 				;(async () => {
 					try {
@@ -172,166 +176,106 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 							initialRequest.text,
 							initialRequest.chatContent?.images,
 						)
-
 						if (!taskInstance || !taskInstance.taskId) {
 							Logger.error(
-								`[GrpcBridge:StartTask] Failed to initialize task for client ${clientId}. Sending ERROR and closing stream.`,
+								`[GrpcBridge:startTask] Failed to initialize task for client ${clientId}. Sending ERROR.`,
 							)
-							const errorMessage: taskControlPb.ExtensionMessage = {
-								type: taskControlPb.ExtensionMessageType.ERROR,
-								errorMessage: "Failed to initialize task internally.",
-							}
 							if (!call.writableEnded) {
-								call.write(errorMessage)
+								call.write({
+									type: taskControlPb.ExtensionMessageType.ERROR,
+									errorMessage: "Failed to initialize task internally.",
+								})
 								call.end()
 							}
 							return
 						}
-
 						const currentTaskId = taskInstance.taskId
 						const extensionVersion = this.context.extension.packageJSON.version || "unknown"
 						Logger.info(
-							`[GrpcBridge:StartTask] Task ${currentTaskId} initialized for client ${clientId}. Sending TASK_STARTED.`,
-						)
-
-						const taskStartedMessage: taskControlPb.ExtensionMessage = {
-							type: taskControlPb.ExtensionMessageType.TASK_STARTED,
-							taskStarted: { taskId: currentTaskId, version: extensionVersion },
-							// errorMessage is not part of the 'payload' oneof and should not be set here unless it's an error message
-						}
-						Logger.info(
-							`[GrpcBridge:StartTask] Constructed TASK_STARTED message for client ${clientId}: ${JSON.stringify(taskStartedMessage)}`,
+							`[GrpcBridge:startTask] Task ${currentTaskId} initialized for client ${clientId}. Sending TASK_STARTED.`,
 						)
 						if (!call.writableEnded) {
-							call.write(taskStartedMessage)
+							call.write({
+								type: taskControlPb.ExtensionMessageType.TASK_STARTED,
+								taskStarted: { taskId: currentTaskId, version: extensionVersion },
+							})
 						}
-						Logger.info(
-							`[GrpcBridge:StartTask] Sent TASK_STARTED (ID: ${currentTaskId}, Version: ${extensionVersion}) to client ${clientId}.`,
-						)
 
-						// Setup listeners for messages from this specific task
 						const stateListener = (cId: string, state: ProtoExtensionState) => {
 							if (cId === clientId && taskInstance.taskId === currentTaskId && !call.writableEnded) {
-								Logger.info(
-									`[GrpcBridge:StartTask:stateListener] Sending state update for task ${currentTaskId} to client ${clientId}`,
-								)
 								call.write({ type: taskControlPb.ExtensionMessageType.STATE, state: state })
 							}
 						}
 						const sayListener = (cId: string, msg: taskControlPb.ClineMessage, partial: boolean) => {
 							if (cId === clientId && taskInstance.taskId === currentTaskId && !call.writableEnded) {
-								Logger.info(
-									`[GrpcBridge:StartTask:sayListener] Sending say (partial: ${partial}) for task ${currentTaskId} to client ${clientId}`,
-								)
-								// Assuming PARTIAL_MESSAGE maps to partialMessage field in the oneof
 								call.write({ type: taskControlPb.ExtensionMessageType.PARTIAL_MESSAGE, partialMessage: msg })
 							}
 						}
 						const askListener = (cId: string, msg: taskControlPb.ClineMessage) => {
 							if (cId === clientId && taskInstance.taskId === currentTaskId && !call.writableEnded) {
-								Logger.info(
-									`[GrpcBridge:StartTask:askListener] Sending ask for task ${currentTaskId} to client ${clientId}`,
-								)
-								// Assuming PARTIAL_MESSAGE is also used for ask, as per current structure
 								call.write({ type: taskControlPb.ExtensionMessageType.PARTIAL_MESSAGE, partialMessage: msg })
 							}
 						}
 						const errorListener = (cId: string, errorMsg: string) => {
 							if (cId === clientId && !call.writableEnded) {
-								Logger.error(
-									`[GrpcBridge:StartTask:errorListener] Sending error for task ${currentTaskId} to client ${clientId}: ${errorMsg}`,
-								)
-								call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: errorMsg }) // errorMessage is a direct field, not in oneof
+								call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: errorMsg })
 							}
 						}
-
+						const newChatMessageListener = (cId: string, tId: string, msg: taskControlPb.ClineMessage) => {
+							// Ensure this message is for the current client and task, and stream is writable
+							if (cId === clientId && tId === currentTaskId && !call.writableEnded) {
+								Logger.info(
+									`[GrpcBridge:startTask:newChatMessageListener] Writing newChatMessage (ts: ${msg.ts}) to gRPC stream for client ${clientId}, task ${currentTaskId}.`,
+								)
+								call.write({
+									type: taskControlPb.ExtensionMessageType.EXTENSION_MESSAGE_TYPE_UNSPECIFIED,
+									newChatMessage: msg,
+								})
+							}
+						}
 						this.grpcNotifier?.on("stateUpdate", stateListener)
 						this.grpcNotifier?.on("sayUpdate", sayListener)
 						this.grpcNotifier?.on("askRequest", askListener)
-						this.grpcNotifier?.on("error", errorListener) // General error listener
-
+						this.grpcNotifier?.on("error", errorListener)
+						this.grpcNotifier?.on("newChatMessage", newChatMessageListener) // Add listener for new event
 						const cleanupListeners = () => {
-							Logger.info(
-								`[GrpcBridge:StartTask] Cleaning up listeners for task ${currentTaskId} on client ${clientId} stream.`,
-							)
 							this.grpcNotifier?.off("stateUpdate", stateListener)
 							this.grpcNotifier?.off("sayUpdate", sayListener)
 							this.grpcNotifier?.off("askRequest", askListener)
 							this.grpcNotifier?.off("error", errorListener)
+							this.grpcNotifier?.off("newChatMessage", newChatMessageListener) // Remove listener
 						}
-
 						taskInstance.onDispose(() => {
 							Logger.info(
-								`[GrpcBridge:StartTask] Task ${currentTaskId} disposed. Ending stream for client ${clientId}.`,
-							)
-							cleanupListeners() // Keep this
-
-							if (!call.writableEnded) {
-								// End the stream as the task is disposed.
-								// The client will detect completion from the final SAY_COMPLETION_RESULT message.
-								Logger.info(
-									`[GrpcBridge:StartTask:onDispose] Task ${currentTaskId} disposed. Ending stream for client ${clientId}.`,
-								)
-								call.end()
-							} else {
-								Logger.warn(
-									`[GrpcBridge:StartTask:onDispose] Stream for task ${currentTaskId} already ended. Task was disposed.`,
-								)
-							}
-						})
-
-						call.on("cancelled", () => {
-							Logger.info(
-								`[GrpcBridge:StartTask] Stream for task ${currentTaskId} cancelled by client ${clientId}.`,
+								`[GrpcBridge:startTask] Task ${currentTaskId} disposed. Ending stream for client ${clientId}.`,
 							)
 							cleanupListeners()
-							if (!taskInstance.isDisposed) {
-								Logger.info(
-									`[GrpcBridge:StartTask] Aborting task ${currentTaskId} due to client stream cancellation.`,
-								)
-								taskInstance
-									.abortTask()
-									.catch((err) =>
-										Logger.error(
-											`[GrpcBridge:StartTask] Error aborting task ${currentTaskId} on cancellation: ${err}`,
-										),
-									)
-							}
-							if (!call.writableEnded) {
-								call.end()
-							}
+							if (!call.writableEnded) call.end()
 						})
-
+						call.on("cancelled", () => {
+							Logger.info(
+								`[GrpcBridge:startTask] Stream for task ${currentTaskId} cancelled by client ${clientId}.`,
+							)
+							cleanupListeners()
+							if (!taskInstance.isDisposed) taskInstance.abortTask().catch(Logger.error)
+							if (!call.writableEnded) call.end()
+						})
 						call.on("error", (err: grpc.ServiceError) => {
 							Logger.error(
-								`[GrpcBridge:StartTask] Stream error for task ${currentTaskId} on client ${clientId}:`,
+								`[GrpcBridge:startTask] Stream error for task ${currentTaskId} on client ${clientId}:`,
 								err,
 							)
 							cleanupListeners()
-							if (!taskInstance.isDisposed) {
-								Logger.info(`[GrpcBridge:StartTask] Aborting task ${currentTaskId} due to stream error.`)
-								taskInstance
-									.abortTask()
-									.catch((e) =>
-										Logger.error(
-											`[GrpcBridge:StartTask] Error aborting task ${currentTaskId} on stream error: ${e}`,
-										),
-									)
-							}
-							if (!call.writableEnded) {
-								call.end()
-							}
+							if (!taskInstance.isDisposed) taskInstance.abortTask().catch(Logger.error)
+							if (!call.writableEnded) call.end()
 						})
 					} catch (error: any) {
-						Logger.error(
-							`[GrpcBridge:StartTask] Outer error during task setup for client ${clientId}: ${error.message} ${error.stack}`,
-						)
+						Logger.error(`[GrpcBridge:startTask] Outer error for client ${clientId}: ${error.message} ${error.stack}`)
 						if (!call.writableEnded) {
-							const errorMessage: taskControlPb.ExtensionMessage = {
+							call.write({
 								type: taskControlPb.ExtensionMessageType.ERROR,
-								errorMessage: `Failed to set up task stream: ${error.message}`,
-							}
-							call.write(errorMessage)
+								errorMessage: `Task setup failed: ${error.message}`,
+							})
 							call.end()
 						}
 					}
@@ -340,202 +284,297 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			sendUserInput: (call: grpc.ServerWritableStream<taskControlPb.InvokeRequest, taskControlPb.ExtensionMessage>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
 				if (!clientId) {
-					Logger.error("[GrpcBridge:sendUserInput] Client ID missing in metadata")
-					const errorResponse: taskControlPb.ExtensionMessage = {
-						type: taskControlPb.ExtensionMessageType.ERROR,
-						errorMessage: "Client ID missing in metadata for SendUserInput",
-					}
+					Logger.error("[GrpcBridge:sendUserInput] Client ID missing")
 					if (!call.writableEnded) {
-						call.write(errorResponse)
+						call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: "Client ID missing" })
 						call.end()
 					}
 					return
 				}
-
-				const request = call.request as taskControlPb.InvokeRequest // Corrected type
-				Logger.info(
-					`[GrpcBridge:sendUserInput] Received for client ${clientId}. Text: ${request.text?.substring(0, 50)}...`,
-				)
+				const request = call.request
+				Logger.info(`[GrpcBridge:sendUserInput] Received for client ${clientId}.`)
 				;(async () => {
 					try {
 						await this.handleUserInput(clientId, request.text, request.images)
-						// If handleUserInput completes without error, the input is accepted.
-						// AI responses will be sent via the StartTask stream.
-						// We can optionally send an ACK here or just end the stream.
-						// For now, just end, as client isn't expecting specific message on *this* stream.
-						Logger.info(`[GrpcBridge:sendUserInput] User input processed for client ${clientId}. Ending stream.`)
-						if (!call.writableEnded) {
-							call.end()
-						}
+						Logger.info(`[GrpcBridge:sendUserInput] Processed for client ${clientId}. Ending stream.`)
+						if (!call.writableEnded) call.end()
 					} catch (error: any) {
-						Logger.error(
-							`[GrpcBridge:sendUserInput] Error processing user input for client ${clientId}: ${error.message} ${error.stack}`,
-						)
-						const errorResponse: taskControlPb.ExtensionMessage = {
-							type: taskControlPb.ExtensionMessageType.ERROR,
-							errorMessage: `Failed to process user input: ${error.message}`,
-						}
+						Logger.error(`[GrpcBridge:sendUserInput] Error for client ${clientId}: ${error.message}`)
 						if (!call.writableEnded) {
-							call.write(errorResponse)
+							call.write({
+								type: taskControlPb.ExtensionMessageType.ERROR,
+								errorMessage: `Input failed: ${error.message}`,
+							})
 							call.end()
 						}
 					}
 				})()
 			},
-			SubmitAskResponse: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+			submitAskResponse: (
+				call: grpc.ServerWritableStream<taskControlPb.AskResponseRequest, taskControlPb.ExtensionMessage>,
+			) => {
+				console.log("[RAW_CONSOLE_LOG GrpcBridge:submitAskResponse] Method invoked.") // RAW CONSOLE LOG
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
+				console.log(`[RAW_CONSOLE_LOG GrpcBridge:submitAskResponse] Client ID from metadata: ${clientId}`) // RAW CONSOLE LOG
 				if (!clientId) {
-					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
-				}
-				try {
-					const webviewMsg: WebviewMessage = {
-						type: "askResponse",
-						askResponse: call.request.ask_response_type,
-						text: call.request.text,
-						images: call.request.images,
+					Logger.error("[GrpcBridge:submitAskResponse] Client ID missing")
+					console.error("[RAW_CONSOLE_LOG GrpcBridge:submitAskResponse] Client ID missing") // RAW CONSOLE LOG
+					if (!call.writableEnded) {
+						call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: "Client ID missing" })
+						call.end()
 					}
-					await this.handleAskResponse(clientId, webviewMsg)
-					callback(null, {})
-				} catch (error: any) {
-					callback({ code: grpc.status.INTERNAL, details: error.message })
+					return
 				}
+				const request = call.request
+				Logger.info(`[GrpcBridge:submitAskResponse] Received for client ${clientId}.`)
+				;(async () => {
+					try {
+						const webviewMsg: WebviewMessage = {
+							type: "askResponse",
+							askResponse:
+								request.askResponseType === taskControlPb.AskResponseType.MESSAGE_RESPONSE
+									? "messageResponse"
+									: request.askResponseType === taskControlPb.AskResponseType.YES_BUTTON_CLICKED
+										? "yesButtonClicked"
+										: "noButtonClicked",
+							text: request.text,
+						}
+						await this.handleAskResponse(clientId, webviewMsg)
+						Logger.info(`[GrpcBridge:submitAskResponse] Processed for client ${clientId}. Ending stream.`)
+						if (!call.writableEnded) call.end()
+					} catch (error: any) {
+						Logger.error(`[GrpcBridge:submitAskResponse] Error for client ${clientId}: ${error.message}`)
+						if (!call.writableEnded) {
+							call.write({
+								type: taskControlPb.ExtensionMessageType.ERROR,
+								errorMessage: `AskResponse failed: ${error.message}`,
+							})
+							call.end()
+						}
+					}
+				})()
 			},
-			SubmitOptionsResponse: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+			submitOptionsResponse: async (
+				call: grpc.ServerWritableStream<taskControlPb.OptionsResponseRequest, taskControlPb.ExtensionMessage>,
+			) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
 				if (!clientId) {
-					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+					Logger.error("[GrpcBridge:submitOptionsResponse] Client ID missing")
+					if (!call.writableEnded) {
+						call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: "Client ID missing" })
+						call.end()
+					}
+					return
 				}
 				try {
 					const webviewMsg: WebviewMessage = {
 						type: "askResponse",
 						askResponse: "messageResponse",
-						text: call.request.selected_option,
+						text: call.request.selectedOption, // Corrected to camelCase
 					}
 					await this.handleAskResponse(clientId, webviewMsg)
-					callback(null, {})
+					Logger.info(`[GrpcBridge:submitOptionsResponse] Processed for client ${clientId}. Ending stream.`)
+					if (!call.writableEnded) call.end()
 				} catch (error: any) {
-					callback({ code: grpc.status.INTERNAL, details: error.message })
+					Logger.error(`[GrpcBridge:submitOptionsResponse] Error for client ${clientId}: ${error.message}`)
+					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `OptionsResponse failed: ${error.message}`,
+						})
+						call.end()
+					}
 				}
 			},
-			ClearTask: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+			clearTask: async (call: grpc.ServerWritableStream<commonPb.EmptyRequest, taskControlPb.ExtensionMessage>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
 				if (!clientId) {
-					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+					Logger.error("[GrpcBridge:clearTask] Client ID missing")
+					if (!call.writableEnded) {
+						call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: "Client ID missing" })
+						call.end()
+					}
+					return
 				}
 				try {
 					await this.handleClearTask(clientId)
-					callback(null, {})
+					Logger.info(`[GrpcBridge:clearTask] Processed for client ${clientId}. Ending stream.`)
+					if (!call.writableEnded) call.end()
 				} catch (error: any) {
-					callback({ code: grpc.status.INTERNAL, details: error.message })
+					Logger.error(`[GrpcBridge:clearTask] Error for client ${clientId}: ${error.message}`)
+					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `ClearTask failed: ${error.message}`,
+						})
+						call.end()
+					}
 				}
 			},
-			CancelTask: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+			cancelTask: async (call: grpc.ServerWritableStream<commonPb.EmptyRequest, taskControlPb.ExtensionMessage>) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
 				if (!clientId) {
-					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
+					Logger.error("[GrpcBridge:cancelTask] Client ID missing")
+					if (!call.writableEnded) {
+						call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: "Client ID missing" })
+						call.end()
+					}
+					return
 				}
 				try {
 					await this.handleCancelTask(clientId)
-					callback(null, {})
+					Logger.info(`[GrpcBridge:cancelTask] Processed for client ${clientId}. Ending stream.`)
+					if (!call.writableEnded) call.end()
 				} catch (error: any) {
-					callback({ code: grpc.status.INTERNAL, details: error.message })
+					Logger.error(`[GrpcBridge:cancelTask] Error for client ${clientId}: ${error.message}`)
+					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `CancelTask failed: ${error.message}`,
+						})
+						call.end()
+					}
 				}
 			},
-			DeleteTaskWithId: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
-				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) {
-					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
-				}
-				try {
-					await this.handleDeleteTaskWithId(clientId, call.request.task_id)
-					callback(null, {})
-				} catch (error: any) {
-					callback({ code: grpc.status.INTERNAL, details: error.message })
-				}
-			},
-			ApplyBrowserSettings: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
-				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) {
-					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
-				}
-				try {
-					await this.handleApplyBrowserSettings(clientId, call.request)
-					callback(null, {})
-				} catch (error: any) {
-					callback({ code: grpc.status.INTERNAL, details: error.message })
-				}
-			},
-			OpenFile: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
-				const clientId = call.metadata.get("client-id")?.[0]?.toString()
-				if (!clientId) {
-					return callback({ code: grpc.status.UNAUTHENTICATED, details: "Client ID missing" })
-				}
-				try {
-					await this.handleOpenFile(clientId, call.request.file_path)
-					callback(null, {})
-				} catch (error: any) {
-					callback({ code: grpc.status.INTERNAL, details: error.message })
-				}
-			},
-			GetLatestState: async (
-				call: grpc.ServerUnaryCall<any, any>,
-				callback: grpc.sendUnaryData<taskControlPb.ExtensionState>,
+			deleteTaskWithId: async (
+				call: grpc.ServerWritableStream<taskControlPb.DeleteTaskWithIdRequest, taskControlPb.ExtensionMessage>,
 			) => {
+				const clientId = call.metadata.get("client-id")?.[0]?.toString()
+				if (!clientId) {
+					Logger.error("[GrpcBridge:deleteTaskWithId] Client ID missing")
+					if (!call.writableEnded) {
+						call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: "Client ID missing" })
+						call.end()
+					}
+					return
+				}
+				try {
+					await this.handleDeleteTaskWithId(clientId, call.request.taskId) // Corrected to camelCase
+					Logger.info(`[GrpcBridge:deleteTaskWithId] Processed for client ${clientId}. Ending stream.`)
+					if (!call.writableEnded) call.end()
+				} catch (error: any) {
+					Logger.error(`[GrpcBridge:deleteTaskWithId] Error for client ${clientId}: ${error.message}`)
+					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `DeleteTaskWithId failed: ${error.message}`,
+						})
+						call.end()
+					}
+				}
+			},
+			applyBrowserSettings: async (
+				call: grpc.ServerWritableStream<taskControlPb.ApplyBrowserSettingsRequest, taskControlPb.ExtensionMessage>,
+			) => {
+				const clientId = call.metadata.get("client-id")?.[0]?.toString()
+				if (!clientId) {
+					Logger.error("[GrpcBridge:applyBrowserSettings] Client ID missing")
+					if (!call.writableEnded) {
+						call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: "Client ID missing" })
+						call.end()
+					}
+					return
+				}
+				try {
+					await this.handleApplyBrowserSettings(clientId, call.request.settings) // Pass settings from request
+					Logger.info(`[GrpcBridge:applyBrowserSettings] Processed for client ${clientId}. Ending stream.`)
+					if (!call.writableEnded) call.end()
+				} catch (error: any) {
+					Logger.error(`[GrpcBridge:applyBrowserSettings] Error for client ${clientId}: ${error.message}`)
+					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `ApplyBrowserSettings failed: ${error.message}`,
+						})
+						call.end()
+					}
+				}
+			},
+			openFile: async (call: grpc.ServerWritableStream<taskControlPb.OpenFileRequest, taskControlPb.ExtensionMessage>) => {
+				const clientId = call.metadata.get("client-id")?.[0]?.toString()
+				if (!clientId) {
+					Logger.error("[GrpcBridge:openFile] Client ID missing")
+					if (!call.writableEnded) {
+						call.write({ type: taskControlPb.ExtensionMessageType.ERROR, errorMessage: "Client ID missing" })
+						call.end()
+					}
+					return
+				}
+				try {
+					await this.handleOpenFile(clientId, call.request.filePath) // Corrected to camelCase
+					Logger.info(`[GrpcBridge:openFile] Processed for client ${clientId}. Ending stream.`)
+					if (!call.writableEnded) call.end()
+				} catch (error: any) {
+					Logger.error(`[GrpcBridge:openFile] Error for client ${clientId}: ${error.message}`)
+					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `OpenFile failed: ${error.message}`,
+						})
+						call.end()
+					}
+				}
+			},
+			getLatestState: async (call: grpc.ServerWritableStream<commonPb.EmptyRequest, taskControlPb.ExtensionMessage>) => {
 				if (!this.controller) {
-					Logger.error("[GrpcBridge:GetLatestState] Controller not available.")
-					return callback({ code: grpc.status.FAILED_PRECONDITION, details: "Controller not available" })
+					Logger.error("[GrpcBridge:getLatestState] Controller not available.")
+					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: "Controller not available",
+						})
+						call.end()
+					}
+					return
 				}
 				try {
 					const currentState = await this.controller.getStateToPostToWebview()
 					const protoState = mapExtensionStateToProto(currentState)
 					if (protoState) {
-						callback(null, protoState)
+						if (!call.writableEnded) {
+							call.write({ type: taskControlPb.ExtensionMessageType.STATE, state: protoState })
+						}
 					} else {
-						Logger.error("[GrpcBridge:GetLatestState] Failed to map current state to proto.")
-						callback({ code: grpc.status.INTERNAL, details: "Failed to map current state" })
+						Logger.error("[GrpcBridge:getLatestState] Failed to map current state to proto.")
+						if (!call.writableEnded) {
+							call.write({
+								type: taskControlPb.ExtensionMessageType.ERROR,
+								errorMessage: "Failed to map current state",
+							})
+						}
 					}
+					if (!call.writableEnded) call.end()
 				} catch (error: any) {
-					Logger.error(`[GrpcBridge:GetLatestState] Error getting state: ${error.message}`)
-					callback({ code: grpc.status.INTERNAL, details: `Error getting state: ${error.message}` })
+					Logger.error(`[GrpcBridge:getLatestState] Error: ${error.message}`)
+					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `GetLatestState failed: ${error.message}`,
+						})
+						call.end()
+					}
 				}
 			},
 			updateSettings: async (
-				// Changed from UpdateSettings to updateSettings
 				call: grpc.ServerWritableStream<taskControlPb.UpdateSettingsRequest, taskControlPb.ExtensionMessage>,
 			) => {
 				const clientId = call.metadata.get("client-id")?.[0]?.toString()
 				Logger.info(
 					`[GrpcBridge:updateSettings] Handler entered. Client ID: ${clientId}, Request: ${JSON.stringify(call.request)}`,
 				)
-				// Call the existing handleUpdateSettings method
-				// Note: The original proto defines UpdateSettings as streaming, but the Go client calls it as unary.
-				// The current GrpcBridge.handleUpdateSettings is async void.
-				// For now, we'll adapt to send a single confirmation and end, assuming the client expects this.
-				// If the client truly expects a stream, this handler and the GrpcBridge.handleUpdateSettings need adjustment.
 				try {
-					// Assuming the actual logic for updating settings is in this.handleUpdateSettings
-					// However, the gRPC method in proto is `stream ExtensionMessage`, so we must stream.
-					// The Go client seems to treat it as unary and then tries to Recv.
-					// Let's call the internal handler first, then send confirmation.
-					await this.handleUpdateSettings(clientId!, call.request) // Pass the request object
-
-					const confirmationMessage: taskControlPb.ExtensionMessage = {
-						type: taskControlPb.ExtensionMessageType.DID_UPDATE_SETTINGS,
-					}
-					Logger.info("[GrpcBridge:updateSettings] Writing DID_UPDATE_SETTINGS confirmation...")
+					await this.handleUpdateSettings(clientId!, call.request)
 					if (!call.writableEnded) {
-						call.write(confirmationMessage)
-					}
-					Logger.info("[GrpcBridge:updateSettings] DID_UPDATE_SETTINGS confirmation written. Ending stream.")
-					if (!call.writableEnded) {
+						call.write({ type: taskControlPb.ExtensionMessageType.DID_UPDATE_SETTINGS })
 						call.end()
 					}
 				} catch (e: any) {
-					Logger.error(`[GrpcBridge:updateSettings] Error in updateSettings handler: ${e.message} ${e.stack}`)
+					Logger.error(`[GrpcBridge:updateSettings] Error: ${e.message} ${e.stack}`)
 					if (!call.writableEnded) {
-						call.emit("error", { code: grpc.status.INTERNAL, details: `updateSettings handler error: ${e.message}` })
-					}
-					if (!call.writableEnded) {
+						call.write({
+							type: taskControlPb.ExtensionMessageType.ERROR,
+							errorMessage: `updateSettings failed: ${e.message}`,
+						})
 						call.end()
 					}
 				}
@@ -805,6 +844,11 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			if (taskInstance && taskInstance.taskId) {
 				this.clientTaskMap.set(clientId, taskInstance)
 				Logger.info(`[GrpcBridge:initTask] Task ${taskInstance.taskId} created and mapped to client ${clientId}`) // Use static Logger
+				// Initialize tracker for this new task
+				if (!this.sentMessagesTracker.has(taskInstance.taskId)) {
+					this.sentMessagesTracker.set(taskInstance.taskId, new Set<string>())
+					Logger.info(`[GrpcBridge:initTask] Initialized sentMessagesTracker for task ${taskInstance.taskId}`)
+				}
 				taskInstance.onDispose(() => {
 					if (this.clientTaskMap.delete(clientId)) {
 						Logger.info(
@@ -815,6 +859,12 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 						Logger.warn(
 							// Use static Logger
 							`[GrpcBridge:initTask] Attempted to remove task mapping for client ${clientId} on disposal, but it was not found in the map.`,
+						)
+					}
+					// Clean up sentMessagesTracker for the disposed task
+					if (this.sentMessagesTracker.delete(taskInstance.taskId!)) {
+						Logger.info(
+							`[GrpcBridge:initTask] Cleaned up sentMessagesTracker for disposed task ${taskInstance.taskId}`,
 						)
 					}
 				})
@@ -1037,14 +1087,17 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 	}
 
 	async handleAskResponse(clientId: string, response: WebviewMessage): Promise<void> {
+		console.log(`[RAW_CONSOLE_LOG GrpcBridge:handleAskResponse] Method invoked for client ${clientId}.`) // RAW CONSOLE LOG
 		Logger.info(`[GrpcBridge] handleAskResponse received for client ${clientId}`) // Use static Logger
 		const task = this.clientTaskMap.get(clientId)
 		if (task && response.type === "askResponse") {
 			Logger.info(`[GrpcBridge] Forwarding ask response to task ${task.taskId}`) // Use static Logger
+			console.log(`[RAW_CONSOLE_LOG GrpcBridge:handleAskResponse] Forwarding ask response to task ${task.taskId}`) // RAW CONSOLE LOG
 			task.handleWebviewAskResponse(response.askResponse!, response.text, response.images)
 		} else {
 			if (!task) {
 				Logger.warn(`[GrpcBridge] Task not found for clientId ${clientId} in handleAskResponse`)
+				console.warn(`[RAW_CONSOLE_LOG GrpcBridge:handleAskResponse] Task not found for clientId ${clientId}`) // RAW CONSOLE LOG
 			} // Use static Logger
 			if (response.type !== "askResponse") {
 				Logger.warn(`[GrpcBridge] Received non-askResponse message in handleAskResponse: ${response.type}`)
@@ -1233,67 +1286,209 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 					let successfullySentToGrpc = false
 					switch (extMsg.type) {
 						case "state":
-							if (extMsg.state) {
-								const protoState = mapExtensionStateToProto(extMsg.state)
-								if (protoState) {
-									Logger.info(`[WRAPPER_TRACE] GRPC_ROUTE: Emitting stateUpdate for client ${clientId}.`)
-									this.grpcNotifier.emit("stateUpdate", clientId, protoState)
-									successfullySentToGrpc = true // Assuming emit means it's handled by gRPC path
-								} else {
-									Logger.warn(
-										`[WRAPPER_TRACE] GRPC_ROUTE: Failed to map 'state' to proto for client ${clientId}.`,
+							if (extMsg.state && taskId) {
+								// Ensure taskId is available for tracking
+								const activeTaskMessages = extMsg.state.clineMessages || []
+								let newMessagesSentCount = 0
+								if (!this.sentMessagesTracker.has(taskId)) {
+									this.sentMessagesTracker.set(taskId, new Set<string>())
+									Logger.info(
+										`[WRAPPER_TRACE] GRPC_ROUTE: Initialized sentMessagesTracker for task ${taskId} during state processing.`,
 									)
 								}
-							}
-							break
-						case "partialMessage": // This is the key path for AI text responses
-							if (extMsg.partialMessage) {
-								const protoClineMsg = mapClineMessageToProto(extMsg.partialMessage)
-								if (protoClineMsg) {
-									// Determine if it's an 'ask' or 'say' based on internal ClineMessage structure
-									if (extMsg.partialMessage.type === "say") {
-										const sayPayload = extMsg.partialMessage
-										if (sayPayload.say === "error" && sayPayload.text) {
-											Logger.warn(
-												`[WRAPPER_TRACE] GRPC_ROUTE: Intercepted SAY_ERROR for client ${clientId}: ${sayPayload.text}`,
-											)
-											this.grpcNotifier.emit("error", clientId, sayPayload.text)
-											successfullySentToGrpc = true
-										} else {
-											const logText =
-												sayPayload.text && sayPayload.text.length < 100
-													? `"${sayPayload.text.replace(/\n/g, "\\n")}"`
-													: `(length: ${sayPayload.text?.length})`
+								const taskSentMessageIds = this.sentMessagesTracker.get(taskId)!
+
+								for (const chatMessage of activeTaskMessages) {
+									const isComplete = chatMessage.partial === undefined || chatMessage.partial === false
+									if (isComplete && chatMessage.ts && !taskSentMessageIds.has(chatMessage.ts.toString())) {
+										const protoChatMessage = mapClineMessageToProto(chatMessage)
+										if (protoChatMessage) {
 											Logger.info(
-												`[WRAPPER_TRACE] GRPC_ROUTE: Emitting sayUpdate for client ${clientId} (taskId: ${taskId}, type: ${sayPayload.say}, partial: ${sayPayload.partial}, text: ${logText}).`,
+												`[WRAPPER_TRACE] GRPC_ROUTE: Emitting newChatMessage for client ${clientId}, task ${taskId}, msgTs ${chatMessage.ts}.`,
 											)
-											this.grpcNotifier.emit(
-												"sayUpdate", // This should trigger call.write in StartTask
-												clientId,
-												protoClineMsg,
-												extMsg.partialMessage.partial ?? false,
+											this.grpcNotifier.emit("newChatMessage", clientId, taskId, protoChatMessage)
+											taskSentMessageIds.add(chatMessage.ts.toString())
+											newMessagesSentCount++
+										} else {
+											Logger.warn(
+												`[WRAPPER_TRACE] GRPC_ROUTE: Failed to map individual ClineMessage (ts: ${chatMessage.ts}) to proto for client ${clientId}.`,
 											)
-											successfullySentToGrpc = true
 										}
-									} else if (extMsg.partialMessage.type === "ask" && extMsg.partialMessage.ask) {
-										Logger.info(
-											`[WRAPPER_TRACE] GRPC_ROUTE: Emitting askRequest for client ${clientId} (type: ${extMsg.partialMessage.ask}).`,
-										)
-										this.grpcNotifier.emit("askRequest", clientId, protoClineMsg)
-										successfullySentToGrpc = true
-									} else {
-										Logger.warn(
-											`[WRAPPER_TRACE] GRPC_ROUTE: 'partialMessage' for client ${clientId} is neither 'say' nor 'ask'. Type: ${extMsg.partialMessage.type}`,
-										)
 									}
+								}
+								if (newMessagesSentCount > 0) {
+									successfullySentToGrpc = true // Indicate that gRPC path handled these messages
+									Logger.info(
+										`[WRAPPER_TRACE] GRPC_ROUTE: Sent ${newMessagesSentCount} new complete messages for task ${taskId} via newChatMessage.`,
+									)
+								} else {
+									// If no new messages were sent, we might still want to send a stateUpdate for other state changes,
+									// or decide to suppress it if only message history is the concern.
+									// For now, let's assume if new messages were sent, that's the primary update.
+									// If not, the original stateUpdate logic could run, or be suppressed.
+									// Current goal: avoid resending full history. So if newMessagesSentCount is 0, we don't emit stateUpdate for messages.
+									// However, other parts of the state might need updating.
+									// For now, if new messages are sent, we consider it handled.
+									// If no new messages, we might still need to send the state for non-message updates.
+									// This part needs careful consideration of what `stateUpdate` is for beyond messages.
+									// Let's log if we are *not* sending a full state update due to this new logic.
+									Logger.debug(
+										`[WRAPPER_TRACE] GRPC_ROUTE: No new *complete* messages to send for task ${taskId}. Original stateUpdate for other state parts would have occurred here.`,
+									)
+								}
+								// To prevent the original full stateUpdate from always firing and resending history:
+								// We've handled new complete messages. If other parts of 'state' are critical for gRPC
+								// and are not covered by other events, a separate mechanism or a stripped-down stateUpdate
+								// might be needed. For now, if newMessagesSentCount > 0, we consider the message history part handled.
+								// If the goal is *only* to send new messages and *never* the full state for message history,
+								// then `successfullySentToGrpc = true` should be set if any processing happened here,
+								// effectively bypassing the original full `stateUpdate` for messages.
+								// Let's assume for now that if we are in the 'state' case, and we've processed messages,
+								// we don't want the old `stateUpdate` to also fire with the full message list.
+								// So, if taskId was present, we consider this path as "handling" the message part of the state.
+								successfullySentToGrpc = true
+							} else {
+								Logger.warn(
+									`[WRAPPER_TRACE] GRPC_ROUTE: 'state' message received but taskId is undefined or extMsg.state is missing. Cannot process for newChatMessage. ClientId: ${clientId}`,
+								)
+								// Fallback to original behavior if critical info is missing for new logic
+								const protoState = extMsg.state ? mapExtensionStateToProto(extMsg.state) : null
+								if (protoState) {
+									Logger.info(
+										`[WRAPPER_TRACE] GRPC_ROUTE: Fallback - Emitting full stateUpdate for client ${clientId}.`,
+									)
+									this.grpcNotifier.emit("stateUpdate", clientId, protoState)
+									successfullySentToGrpc = true
 								} else {
 									Logger.warn(
-										`[WRAPPER_TRACE] GRPC_ROUTE: Failed to map 'partialMessage' to proto for client ${clientId}.`,
+										`[WRAPPER_TRACE] GRPC_ROUTE: Fallback - Failed to map 'state' to proto for client ${clientId}.`,
 									)
 								}
 							}
 							break
-						// Add other cases like tool_use, tool_result if they are expected to be routed
+						case "partialMessage":
+							if (clientId && this.grpcNotifier && extMsg.partialMessage) {
+								const currentPartialMsg = extMsg.partialMessage
+								// Handle 'say: "error"' separately and immediately
+								if (
+									currentPartialMsg.type === "say" &&
+									currentPartialMsg.say === "error" &&
+									currentPartialMsg.text
+								) {
+									Logger.warn(
+										`[WRAPPER_TRACE] GRPC_ROUTE: Intercepted SAY_ERROR for client ${clientId}: ${currentPartialMsg.text}`,
+									)
+									this.grpcNotifier.emit("error", clientId, currentPartialMsg.text)
+									successfullySentToGrpc = true
+								} else if (currentPartialMsg.ts && taskId) {
+									// Proceed with buffering only if not an immediate error and ts/taskId are present
+									const taskBufferMap =
+										this.grpcPartialMessageBuffer.get(taskId) ?? new Map<string, ClineMessage>()
+									this.grpcPartialMessageBuffer.set(taskId, taskBufferMap)
+
+									const messageTs = currentPartialMsg.ts.toString()
+									let bufferedMessage = taskBufferMap.get(messageTs)
+
+									if (!bufferedMessage) {
+										// First time seeing this message.ts, clone it.
+										bufferedMessage = JSON.parse(JSON.stringify(currentPartialMsg)) as ClineMessage
+									} else {
+										// Append content to existing buffered message
+										if (bufferedMessage.type === currentPartialMsg.type) {
+											if (currentPartialMsg.text) {
+												// Common text field
+												bufferedMessage.text = (bufferedMessage.text || "") + currentPartialMsg.text
+											}
+
+											if (bufferedMessage.type === "say" && currentPartialMsg.type === "say") {
+												// Properties 'say' are guaranteed to exist due to the type check above
+												if (bufferedMessage.say === currentPartialMsg.say) {
+													if (bufferedMessage.say === "tool_code") {
+														// Explicitly cast to a type that includes tool_code specific fields
+														const bmToolCode = bufferedMessage as ClineMessage & {
+															toolInput?: string
+															toolName?: string
+															toolArgs?: string
+														}
+														const cpToolCode = currentPartialMsg as ClineMessage & {
+															toolInput?: string
+															toolName?: string
+															toolArgs?: string
+														}
+														if (cpToolCode.toolInput) {
+															bmToolCode.toolInput =
+																(bmToolCode.toolInput || "") + cpToolCode.toolInput
+														}
+														if (cpToolCode.toolName) bmToolCode.toolName = cpToolCode.toolName
+														if (cpToolCode.toolArgs) bmToolCode.toolArgs = cpToolCode.toolArgs
+													}
+													// Other 'say' subtypes (like 'text' for tool_use XML) are handled by common text appending
+												} else {
+													Logger.warn(
+														`[WRAPPER_TRACE] GRPC_ROUTE: Mismatch in 'say' subtype for partial message ts ${messageTs}. Buffered: ${bufferedMessage.say}, Incoming: ${currentPartialMsg.say}. Not appending specific content.`,
+													)
+												}
+											} else if (bufferedMessage.type === "ask" && currentPartialMsg.type === "ask") {
+												// Properties 'ask' are guaranteed to exist
+												if (bufferedMessage.ask === currentPartialMsg.ask) {
+													// Append ask-specific streamable fields if any (text is common, handled above)
+												} else {
+													Logger.warn(
+														`[WRAPPER_TRACE] GRPC_ROUTE: Mismatch in 'ask' subtype for partial message ts ${messageTs}. Buffered: ${bufferedMessage.ask}, Incoming: ${currentPartialMsg.ask}. Not appending specific content.`,
+													)
+												}
+											}
+											// No 'else if (bufferedMessage.type === "tool_use")' because ClineMessage.type is only "say" or "ask".
+											// A tool_use by AI is type: "say", say: "text" (XML in text field).
+										} else {
+											Logger.warn(
+												`[WRAPPER_TRACE] GRPC_ROUTE: Mismatch in top-level type for partial message ts ${messageTs}. Buffered: ${bufferedMessage.type}, Incoming: ${currentPartialMsg.type}. Not appending content.`,
+											)
+										}
+										// Always update to the latest partial status
+										bufferedMessage.partial = currentPartialMsg.partial
+									}
+
+									// Ensure bufferedMessage is defined before proceeding
+									if (bufferedMessage) {
+										taskBufferMap.set(messageTs, bufferedMessage) // Store updated/new message in buffer
+
+										if (bufferedMessage.partial === false || bufferedMessage.partial === undefined) {
+											// Message is complete
+											const protoClineMsg = mapClineMessageToProto(bufferedMessage)
+											if (protoClineMsg) {
+												Logger.info(
+													`[WRAPPER_TRACE] GRPC_ROUTE: Emitting buffered newChatMessage for client ${clientId}, task ${taskId}, msgTs ${messageTs}. Type: ${bufferedMessage.type}`,
+												)
+												this.grpcNotifier.emit("newChatMessage", clientId, taskId, protoClineMsg)
+
+												const taskSentMessageIds =
+													this.sentMessagesTracker.get(taskId) ?? new Set<string>()
+												taskSentMessageIds.add(messageTs)
+												this.sentMessagesTracker.set(taskId, taskSentMessageIds)
+
+												taskBufferMap.delete(messageTs)
+												if (taskBufferMap.size === 0) {
+													this.grpcPartialMessageBuffer.delete(taskId)
+												}
+											} else {
+												Logger.warn(
+													`[WRAPPER_TRACE] GRPC_ROUTE: Failed to map buffered 'partialMessage' (ts: ${messageTs}) to proto for client ${clientId}.`,
+												)
+											}
+										}
+									}
+									successfullySentToGrpc = true // Indicate gRPC path handled this (either buffered or sent)
+								} else {
+									// Not an error, but no timestamp or taskId, or other condition not met for buffering.
+									// Let it fall through if not explicitly handled.
+									Logger.debug(
+										`[WRAPPER_TRACE] GRPC_ROUTE: Partial message for client ${clientId} not buffered (no ts or taskId, or other). Type: ${currentPartialMsg.type}`,
+									)
+								}
+							}
+							break
+						// Add other cases like tool_result if they are expected to be routed
 						// For now, focusing on text (partialMessage) and state.
 						default:
 							if (!extMsg.error) {
@@ -1374,6 +1569,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 			this.grpcNotifier = null
 		}
 		this.clientTaskMap.clear()
+		this.sentMessagesTracker.clear() // Clear the tracker on dispose
+		this.grpcPartialMessageBuffer.clear() // Clear the partial message buffer
+		Logger.info("[GrpcBridge] Cleared clientTaskMap, sentMessagesTracker, and grpcPartialMessageBuffer.")
 		vscode.Disposable.from(...this.disposables).dispose()
 		this.disposables = []
 		Logger.info("[GrpcBridge] Disposed.") // Use static Logger

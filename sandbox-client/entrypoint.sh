@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Set the timezone for all processes in this container to Europe/Warsaw
+export TZ="Europe/Warsaw"
+echo "Timezone set to $(date)"
+
 # This is the entrypoint script for the sandbox container
 
 # Define PIDs globally for cleanup

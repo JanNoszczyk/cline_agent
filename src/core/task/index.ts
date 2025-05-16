@@ -660,7 +660,7 @@ export class Task {
 							partialMessage: lastMessage,
 						},
 						this.taskId,
-					) // Pass taskId
+					)
 					throw new Error("Current ask promise was ignored 1")
 				} else {
 					// this is a new partial message, so add it with partial state

@@ -896,6 +896,7 @@ message ExtensionMessage {
     FileSearchResultListWrapper file_search_results = 36; // type=FILE_SEARCH_RESULTS (37)
     GrpcResponse grpc_response = 37;         // type=GRPC_RESPONSE (38)
     // TaskStartedInfo task_started = 38; // Moved out of oneof
+    ClineMessage new_chat_message = 40;   // For sending newly completed messages
   }
 }
 

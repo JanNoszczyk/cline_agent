@@ -56,9 +56,11 @@ trap 'cleanup_and_aggregate_all_logs; echo "Exiting due to signal."; exit' SIGIN
 # For normal EXIT (e.g., end of script or explicit 'exit' command), just run cleanup.
 trap cleanup_and_aggregate_all_logs EXIT
 
-# Clear previous composite log files if they exist at the start of the script
-> "$COMPOSE_LOG_FILE"
-> "$SANDBOX_CONTAINER_LOG_FILE"
+# Ensure the run_logs directory exists and is empty
+echo "Clearing all previous log files from run_logs/ directory..."
+rm -f run_logs/* # Remove all files in the directory
+# The individual log files (COMPOSE_LOG_FILE, SANDBOX_CONTAINER_LOG_FILE) will be created fresh.
+# Other logs copied from the container will also start fresh in an empty directory.
 
 echo "Starting Docker Compose for sandbox-client in the background..."
 echo "Docker Compose output will be streamed to the terminal."
