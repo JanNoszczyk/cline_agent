@@ -52,3 +52,59 @@ sandbox-client/vsix-contents-tree.log
 src/shared/proto_webview_types/
 vsix_extracted/
 webview-ui/src/services/empty-module.js
+
+# ===== Modular Structure Exclusions =====
+
+# Private components (should be in separate private repository)
+sandbox-client/
+/sandbox-client
+*-private/
+private-tests/
+
+# Testing framework (can be moved to separate repo if desired)
+# Uncomment if you want to keep it separate
+# grpc-testing-framework/
+
+# Generated Go code in adapter
+cline-grpc-adapter/genproto/
+
+# Backup directories from migration
+*.backup.*
+proto.backup.*/
+
+# Local development files
+.env.local
+.vscode/settings.json
+
+# Proto submodule build artifacts (if using submodule)
+proto/node_modules/
+proto/dist/
+proto/*.js
+proto/*.d.ts
+
+# Proto shared remains in public fork - not ignored
+
+# VSIX packaging artifacts
+*.vsix
+claude-dev-*.vsix
+vsix-contents-tree.log
+
+# Docker and test artifacts
+docker-compose.override.yml
+test-results/
+test-workspaces/
+
+# IDE and editor files
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary directories
+tmp/
+temp/
+.tmp/

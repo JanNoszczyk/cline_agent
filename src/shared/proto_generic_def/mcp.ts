@@ -1598,6 +1598,14 @@ export const McpServiceDefinition = {
 			responseStream: false,
 			options: {},
 		},
+		openMcpSettings: {
+			name: "openMcpSettings",
+			requestType: EmptyRequest,
+			requestStream: false,
+			responseType: Empty,
+			responseStream: false,
+			options: {},
+		},
 	},
 } as const
 
