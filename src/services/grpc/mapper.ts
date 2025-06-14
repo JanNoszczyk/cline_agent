@@ -424,7 +424,74 @@ export function mapClineMessageToProto(msg: InternalClineMessage | undefined): P
 					// {"tool":"editedExistingFile","path":"calculator.html","content":"..."}
 					// or {"tool":"write_to_file","path":"calculator.html","content":"..."}
 					// or {"tool":"execute_command","command":"ls"}
+					// or {"tool":"attempt_completion","result":"Task completed"}
 					const askPayloadObject = JSON.parse(msg.text || "{}")
+
+					// Special handling for attempt_completion - it should be mapped to completion_result
+					if (askPayloadObject.tool === "attempt_completion") {
+						Logger.info(`[gRPC-Info: Mapper] Mapping attempt_completion tool to completion_result`)
+						protoMsg.askCompletionResultPayload = {
+							resultText: askPayloadObject.result || "",
+						} as ProtoAskCompletionResultPayload
+						break
+					}
+
+					// Special handling for ask_followup_question - it should be mapped to followup
+					if (askPayloadObject.tool === "ask_followup_question") {
+						Logger.info(`[gRPC-Info: Mapper] Mapping ask_followup_question tool to followup`)
+						protoMsg.askFollowupPayload = {
+							question: askPayloadObject.question || "",
+							options: askPayloadObject.options || [],
+						} as ProtoAskFollowupPayload
+						break
+					}
+
+					// Special handling for plan_mode_respond - it should be mapped to plan_mode_respond
+					if (askPayloadObject.tool === "plan_mode_respond") {
+						Logger.info(`[gRPC-Info: Mapper] Mapping plan_mode_respond tool to plan_mode_respond`)
+						protoMsg.askPlanModeRespondPayload = {
+							response: askPayloadObject.response || "",
+							options: askPayloadObject.options || [],
+						} as ProtoAskPlanModeRespondPayload
+						break
+					}
+
+					// Special handling for new_task - it should be mapped to new_task
+					if (askPayloadObject.tool === "new_task") {
+						Logger.info(`[gRPC-Info: Mapper] Mapping new_task tool to new_task`)
+						protoMsg.askNewTaskPayload = {
+							context: askPayloadObject.context || "",
+						} as ProtoAskNewTaskPayload
+						break
+					}
+
+					// Special handling for browser_action - it should be mapped to browser_action_launch
+					if (askPayloadObject.tool === "browser_action") {
+						Logger.info(`[gRPC-Info: Mapper] Mapping browser_action tool to browser_action_launch`)
+						if (askPayloadObject.action === "launch" && askPayloadObject.url) {
+							protoMsg.askBrowserActionLaunchPayload = {
+								url: askPayloadObject.url || "",
+							} as ProtoAskBrowserActionLaunchPayload
+							break
+						}
+						// For other browser actions, continue to tool payload handling below
+					}
+
+					// Special handling for use_mcp_tool and access_mcp_resource
+					if (askPayloadObject.tool === "use_mcp_tool" || askPayloadObject.tool === "access_mcp_resource") {
+						Logger.info(`[gRPC-Info: Mapper] Mapping ${askPayloadObject.tool} to use_mcp_server`)
+						protoMsg.askUseMcpServerPayload = {
+							serverName: askPayloadObject.server_name || "",
+							type:
+								askPayloadObject.tool === "use_mcp_tool"
+									? ProtoMcpRequestType.USE_MCP_TOOL
+									: ProtoMcpRequestType.ACCESS_MCP_RESOURCE,
+							toolName: askPayloadObject.tool_name || undefined,
+							argumentsJson: askPayloadObject.arguments ? JSON.stringify(askPayloadObject.arguments) : undefined,
+							uri: askPayloadObject.uri || undefined,
+						} as ProtoAskUseMcpServerPayload
+						break
+					}
 
 					// Initialize sayToolDetails with only valid fields of ProtoSayToolPayload
 					const sayToolDetails: Partial<ProtoSayToolPayload> = {
@@ -441,13 +508,46 @@ export function mapClineMessageToProto(msg: InternalClineMessage | undefined): P
 						sayToolDetails.tool = ProtoSayToolType.NEW_FILE_CREATED
 						sayToolDetails.path = askPayloadObject.path || ""
 						sayToolDetails.content = askPayloadObject.content || ""
+					} else if (askPayloadObject.tool === "read_file") {
+						sayToolDetails.tool = ProtoSayToolType.READ_FILE
+						sayToolDetails.path = askPayloadObject.path || ""
+					} else if (askPayloadObject.tool === "replace_in_file") {
+						sayToolDetails.tool = ProtoSayToolType.EDITED_EXISTING_FILE
+						sayToolDetails.path = askPayloadObject.path || ""
+						sayToolDetails.diff = askPayloadObject.diff || ""
+					} else if (askPayloadObject.tool === "search_files") {
+						sayToolDetails.tool = ProtoSayToolType.SAY_SEARCH_FILES
+						sayToolDetails.regex = askPayloadObject.regex || ""
+						sayToolDetails.filePattern = askPayloadObject.file_pattern || ""
+					} else if (askPayloadObject.tool === "list_files") {
+						sayToolDetails.tool = askPayloadObject.recursive
+							? ProtoSayToolType.LIST_FILES_RECURSIVE
+							: ProtoSayToolType.LIST_FILES_TOP_LEVEL
+						sayToolDetails.path = askPayloadObject.path || ""
+					} else if (askPayloadObject.tool === "list_code_definition_names") {
+						sayToolDetails.tool = ProtoSayToolType.LIST_CODE_DEFINITION_NAMES
+						sayToolDetails.path = askPayloadObject.path || ""
 					} else if (askPayloadObject.tool === "execute_command") {
 						sayToolDetails.tool = ProtoSayToolType.SAY_TOOL_TYPE_UNSPECIFIED
 						sayToolDetails.content = askPayloadObject.command || "" // Command string goes into content
+					} else if (askPayloadObject.tool === "browser_action") {
+						// Non-launch browser actions get handled as generic tools
+						sayToolDetails.tool = ProtoSayToolType.SAY_TOOL_TYPE_UNSPECIFIED
+						sayToolDetails.content = JSON.stringify({
+							action: askPayloadObject.action,
+							coordinate: askPayloadObject.coordinate,
+							text: askPayloadObject.text,
+						})
 					} else {
-						// For other tools, including use_mcp_tool, the specific parameters
+						// For other tools that don't have specific proto mappings, the parameters
 						// are stringified and put into the 'content' field.
 						// The 'tool' type remains SAY_TOOL_TYPE_UNSPECIFIED.
+						// Tools that fall into this category:
+						// - load_mcp_documentation
+						// - condense (not in proto)
+						// - report_bug (not in proto)
+						// - new_rule (not in proto)
+						// - any future tools not explicitly handled above
 						Logger.warn(
 							`[gRPC-Warn: Mapper] ASK for tool name '${askPayloadObject.tool}' has no specific mapping to SayToolPayload structure. Defaulting to UNSPECIFIED with stringified params in content.`,
 						)
