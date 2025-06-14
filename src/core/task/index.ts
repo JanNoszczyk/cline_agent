@@ -1930,7 +1930,7 @@ export class Task {
 					if (typeof content === "string") {
 						this.userMessageContent.push({
 							type: "text",
-							text: content || "(tool did not return anything)",
+							text: content !== "" ? content : "(completion approved)",
 						})
 					} else {
 						this.userMessageContent.push(...content)
@@ -3675,7 +3675,7 @@ export class Task {
 								// we already sent completion_result says, an empty string asks relinquishes control over button and field
 								const { response, text, images } = await this.ask("completion_result", "", false)
 								if (response === "yesButtonClicked") {
-									pushToolResult("") // signals to recursive loop to stop (for now this never happens since yesButtonClicked will trigger a new task)
+									pushToolResult("Task completed successfully") // signals to recursive loop to stop (for now this never happens since yesButtonClicked will trigger a new task)
 									break
 								}
 								await this.say("user_feedback", text ?? "", images)

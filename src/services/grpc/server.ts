@@ -364,8 +364,8 @@ export async function startExternalGrpcServer(
 		log("[CONSOLE External GRPC] Finished service registration.")
 
 		const port = 50051
-		// Try 127.0.0.1 first, fallback to 0.0.0.0 if needed
-		const hosts = ["127.0.0.1", "0.0.0.0", "localhost"]
+		// Try 0.0.0.0 first for Docker compatibility, then fallback to localhost addresses
+		const hosts = ["0.0.0.0", "127.0.0.1", "localhost"]
 		Logger.info(`[External GRPC] Will try binding to hosts in order: ${hosts.join(", ")}`)
 		log(`[CONSOLE External GRPC] Will try binding to hosts in order: ${hosts.join(", ")}`)
 

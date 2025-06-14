@@ -126,14 +126,50 @@ const copyProtoFiles = {
 			const sourceDir = path.join(__dirname, "proto")
 			const targetDir = path.join(__dirname, "dist", "proto")
 
-			// Ensure target directory exists and copy recursively
 			try {
+				// First, ensure dist directory exists
+				const distDir = path.join(__dirname, "dist")
+				if (!fs.existsSync(distDir)) {
+					fs.mkdirSync(distDir, { recursive: true })
+				}
+
+				// Remove target completely if it exists
+				if (fs.existsSync(targetDir)) {
+					fs.rmSync(targetDir, { recursive: true, force: true })
+				}
+
+				// Resolve the actual source directory (handle symlinks)
+				let actualSourceDir = sourceDir
+				try {
+					const stats = fs.lstatSync(sourceDir)
+					if (stats.isSymbolicLink()) {
+						actualSourceDir = fs.realpathSync(sourceDir)
+						console.log(`Proto is a symlink pointing to: ${actualSourceDir}`)
+					}
+				} catch (e) {
+					console.log(`Could not check if proto is symlink: ${e.message}`)
+				}
+
+				// Verify source exists
+				if (!fs.existsSync(actualSourceDir)) {
+					console.error(`Source proto directory not found: ${actualSourceDir}`)
+					return
+				}
+
+				// Create target directory
 				fs.mkdirSync(targetDir, { recursive: true })
-				fs.cpSync(sourceDir, targetDir, { recursive: true })
-				console.log("Copied proto files to dist/proto")
+
+				// Copy files
+				console.log(`Copying proto files from ${actualSourceDir} to ${targetDir}`)
+				fs.cpSync(actualSourceDir, targetDir, {
+					recursive: true,
+					dereference: true, // This will follow symlinks
+				})
+
+				console.log("Successfully copied proto files to dist/proto")
 			} catch (err) {
-				console.error("Error copying proto files:", err)
-				// Optionally re-throw or handle error appropriately
+				console.error("Warning: Could not copy proto files:", err.message)
+				// Don't fail the build for proto copy issues
 			}
 		})
 	},

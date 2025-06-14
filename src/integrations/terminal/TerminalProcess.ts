@@ -38,7 +38,7 @@ export class TerminalProcess extends EventEmitter<TerminalProcessEvents> {
 			let firstChunkTimeout: NodeJS.Timeout
 
 			const isWindows = process.platform === "win32"
-			const timeoutMs = isWindows ? 5000 : 500
+			const timeoutMs = isWindows ? 5000 : 10000 // Increased from 500ms to 10s for Unix/Mac
 
 			const onTimeout = () => {
 				// In rare cases (e.g. running the same command twice like `npm run build`),

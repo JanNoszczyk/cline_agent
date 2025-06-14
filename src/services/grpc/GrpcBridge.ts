@@ -1275,6 +1275,9 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 					case taskControlPb.ApiProvider.OPENROUTER:
 						internalApiProvider = "openrouter"
 						break
+					case taskControlPb.ApiProvider.GEMINI:
+						internalApiProvider = "gemini"
+						break
 					// ... other provider mappings ...
 					default:
 						Logger.warn(
@@ -1285,7 +1288,53 @@ export class GrpcBridge implements GrpcServerCallbacks, vscode.Disposable {
 				if (internalApiProvider) {
 					updates.apiProvider = internalApiProvider
 					Logger.info(`[GrpcBridge:handleUpdateSettings] Mapped provider: ${internalApiProvider}`)
-					// ... map provider specific fields ...
+
+					// Map API model
+					if (protoApiConfig.apiModelId) {
+						updates.apiModelId = protoApiConfig.apiModelId
+					}
+
+					// Map provider-specific fields based on the selected provider
+					switch (internalApiProvider) {
+						case "anthropic":
+							if (protoApiConfig.apiKey) {
+								updates.apiKey = protoApiConfig.apiKey
+							}
+							if (protoApiConfig.anthropicBaseUrl) {
+								updates.anthropicBaseUrl = protoApiConfig.anthropicBaseUrl
+							}
+							break
+						case "openai":
+							if (protoApiConfig.openAiApiKey) {
+								updates.apiKey = protoApiConfig.openAiApiKey
+							}
+							if (protoApiConfig.openAiHeaders) {
+								updates.openAiHeaders = protoApiConfig.openAiHeaders
+							}
+							break
+						case "gemini":
+							if (protoApiConfig.geminiApiKey) {
+								updates.geminiApiKey = protoApiConfig.geminiApiKey
+							}
+							break
+						case "openrouter":
+							if (protoApiConfig.openRouterApiKey) {
+								updates.openRouterApiKey = protoApiConfig.openRouterApiKey
+							}
+							break
+						case "bedrock":
+							if (protoApiConfig.awsAccessKey) {
+								updates.awsAccessKey = protoApiConfig.awsAccessKey
+							}
+							if (protoApiConfig.awsSecretKey) {
+								updates.awsSecretKey = protoApiConfig.awsSecretKey
+							}
+							if (protoApiConfig.awsRegion) {
+								updates.awsRegion = protoApiConfig.awsRegion
+							}
+							break
+					}
+
 					updates.favoritedModelIds = protoApiConfig.favoritedModelIds || []
 				}
 

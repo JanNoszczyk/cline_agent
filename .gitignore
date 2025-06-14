@@ -50,6 +50,7 @@ run_logs/
 # User-added redundant files/directories
 sandbox-client/vsix-contents-tree.log
 src/shared/proto_webview_types/
+src/shared/proto_generic_def/
 vsix_extracted/
 webview-ui/src/services/empty-module.js
 
